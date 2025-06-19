@@ -17,6 +17,22 @@ pub struct Object {
 
 impl Object {
     /// Creates a new Object instance.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `key` - The unique identifier for the object within its bucket.
+    /// * `data` - The binary data of the object.
+    /// 
+    /// # Returns
+    /// 
+    /// * `Object` - The newly created Object instance.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use s3_learning_project::object::Object;
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// ```
     pub fn new(key: String, data: Vec<u8>) -> Self {
         Object {
             key,
@@ -30,6 +46,18 @@ impl Object {
     }
 
     /// Returns the size of the object data in bytes.
+    /// 
+    /// # Returns
+    /// 
+    /// * `usize` - The size of the object data in bytes.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use s3_learning_project::object::Object;
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// assert_eq!(object.size(), 3);
+    /// ```
     pub fn size(&self) -> usize {
         self.data.len()
     }

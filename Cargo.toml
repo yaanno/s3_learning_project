@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+[lib]
+name = "s3_learning_project"
+path = "src/lib.rs"
