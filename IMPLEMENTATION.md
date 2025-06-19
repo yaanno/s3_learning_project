@@ -20,7 +20,7 @@ Purpose: The main executable file that imports the other modules and demonstrate
 
 Initializes a mutable S3Service instance.
 
-Contains a sequence of calls to S3Service methods (create_bucket, put_object, get_object, list_buckets, list_objects, delete_object, delete_bucket).
+Contains a sequence of calls to S3Service methods (`create_bucket`, `put_object`, `get_object`, `list_buckets`, `list_objects`, `delete_object`, `delete_bucket`).
 
 Uses Rust's match statement to handle Result types returned by the S3Service methods, printing success or error messages to the console.
 
@@ -31,17 +31,17 @@ Purpose: Implements the S3Service struct, which acts as the main interface to ou
 
 *Dependencies*
 
-Imports std::collections::HashMap, crate::bucket::Bucket, and crate::object::Object.
+Imports `std::collections::HashMap`, `crate::bucket::Bucket`, and `crate::object::Object`.
 
 *Error Handling*
 
 S3Error Enum
 
-#[derive(Debug, PartialEq)]: Allows for easy debugging and comparison in tests.
+`#[derive(Debug, PartialEq)]`: Allows for easy debugging and comparison in tests.
 
-impl std::fmt::Display for S3Error: Enables user-friendly printing of error messages.
+`impl std::fmt::Display for S3Error`: Enables user-friendly printing of error messages.
 
-impl std::error::Error for S3Error: Marks S3Error as a standard Rust error type, allowing it to be used with ? operator (though not explicitly used in main.rs due to direct match statements).
+`impl std::error::Error for S3Error`: Marks S3Error as a standard Rust error type, allowing it to be used with ? operator (though not explicitly used in main.rs due to direct match statements).
 
 *Data Structures*
 
@@ -51,37 +51,37 @@ buckets: HashMap<String, Bucket>: The core data store, mapping bucket names to B
 
 *Methods*
 
-- new(): Constructor, initializes an empty HashMap.
+- `new() -> Self`: Constructor, initializes an empty HashMap.
 
-- create_bucket(&mut self, name: &str) -> Result<(), S3Error>:
+- `create_bucket(&mut self, name: &str) -> Result<(), S3Error>`:
 
 Checks self.buckets.contains_key(name) to prevent duplicate bucket creation.
 
 Inserts a Bucket::new(name.to_string()) into the HashMap.
 
-delete_bucket(&mut self, name: &str) -> Result<(), S3Error>:
+- `delete_bucket(&mut self, name: &str) -> Result<(), S3Error>`:
 
 Uses self.buckets.remove(name) which returns Option<Bucket>. is_some() checks if the bucket was found and removed.
 
-list_buckets(&self) -> Vec<String>:
+- `list_buckets(&self) -> Vec<String>`:
 
 Collects cloned keys from self.buckets.keys() into a Vec<String>.
 
-put_object(&mut self, bucket_name: &str, key: &str, data: Vec<u8>) -> Result<(), S3Error>:
+- `put_object(&mut self, bucket_name: &str, key: &str, data: Vec<u8>) -> Result<(), S3Error>`:
 
-self.buckets.get_mut(bucket_name): Obtains a mutable reference to the target bucket.
+`self.buckets.get_mut(bucket_name)`: Obtains a mutable reference to the target bucket.
 
 If bucket exists, calls bucket.put_object(key.to_string(), Object::new(key.to_string(), data)). This demonstrates delegation of object management to the Bucket.
 
-get_object(&self, bucket_name: &str, key: &str) -> Result<&Object, S3Error>:
+- `get_object(&self, bucket_name: &str, key: &str) -> Result<&Object, S3Error>`:
 
-bucket.get_object(key).ok_or(S3Error::ObjectNotFound): Converts Option<&Object> to Result<&Object, S3Error>.
+- `bucket.get_object(key).ok_or(S3Error::ObjectNotFound)`: Converts Option<&Object> to Result<&Object, S3Error>.
 
-delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error>:
+- `delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error>`:
 
 Delegates to bucket.delete_object(key).
 
-list_objects(&self, bucket_name: &str) -> Result<Vec<String>, S3Error>:
+- `list_objects(&self, bucket_name: &str) -> Result<Vec<String>, S3Error>`:
 
 Delegates to bucket.list_objects().
 
@@ -90,7 +90,7 @@ Purpose: Implements the Bucket struct, responsible for managing objects within a
 
 *Dependencies*
 
-Imports std::collections::HashMap and crate::object::Object.
+Imports `std::collections::HashMap` and `crate::object::Object`.
 
 *Bucket Struct*
 
@@ -100,19 +100,19 @@ objects: HashMap<String, Object>: Stores objects, mapping their keys to Object i
 
 *Methods*
 
-- new(name: String) -> Self: Constructor.
+- `new(name: String) -> Self`: Constructor.
 
-- get_name(&self) -> &str: Getter for the bucket name.
+- `get_name(&self) -> &str`: Getter for the bucket name.
 
-- put_object(&mut self, key: String, object: Object): Inserts or overwrites an object.
+- `put_object(&mut self, key: String, object: Object)`: Inserts or overwrites an object.
 
-- get_object(&self, key: &str) -> Option<&Object>: Retrieves an immutable reference to an object.
+- `get_object(&self, key: &str) -> Option<&Object>`: Retrieves an immutable reference to an object.
 
-- delete_object(&mut self, key: &str) -> bool: Removes an object, returning true if it was present.
+- `delete_object(&mut self, key: &str) -> bool`: Removes an object, returning true if it was present.
 
-- list_objects(&self) -> Vec<String>: Returns a list of all object keys in the bucket.
+- `list_objects(&self) -> Vec<String>`: Returns a list of all object keys in the bucket.
 
-- is_empty(&self) -> bool: Checks if the bucket contains any objects.
+- `is_empty(&self) -> bool`: Checks if the bucket contains any objects.
 
 ### 2.4. src/object.rs
 Purpose: Implements the Object struct, representing the actual data stored.
@@ -127,34 +127,6 @@ pub data: Vec<u8>: The raw binary content of the object. Vec<u8> is suitable for
 
 *Methods*
 
-- new(key: String, data: Vec<u8>) -> Self: Constructor.
+- `new(key: String, data: Vec<u8>) -> Self`: Constructor.
 
-- size(&self) -> usize: Returns the byte length of the data vector.
-
-## 3. Build and Run Instructions
-To compile and run this project:
-
-Create a new Rust project:
-
-```bash
-cargo new s3_learning_project
-cd s3_learning_project
-```
-
-Copy files:
-
-Replace the content of src/main.rs with the provided main.rs code.
-
-Create src/s3_service.rs and paste the s3_service.rs code.
-
-Create src/bucket.rs and paste the bucket.rs code.
-
-Create src/object.rs and paste the object.rs code.
-
-Run:
-
-```bash
-cargo run
-```
-
-This will compile the project and execute the main function, demonstrating the S3-like operations and printing their outcomes to the console.
+- `size(&self) -> usize`: Returns the byte length of the data vector.
