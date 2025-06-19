@@ -22,7 +22,7 @@ pub struct Object {
     pub etag: String, // Hash of the object's data
     pub last_modified: std::time::SystemTime,
     #[serde(skip_serializing)]
-    pub user_metadata: HashMap<String, String>,
+    pub user_metadata: Option<HashMap<String, String>>,
 }
 
 fn calculate_etag(data: &Vec<u8>) -> String {
@@ -47,9 +47,9 @@ impl Object {
     /// 
     /// ```
     /// use s3_learning_project::object::Object;
-    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3], None, None);
     /// ```
-    pub fn new(key: String, data: Vec<u8>, content_type: Option<String>, user_metadata: HashMap<String, String>) -> Self {
+    pub fn new(key: String, data: Vec<u8>, content_type: Option<String>, user_metadata: Option<HashMap<String, String>>) -> Self {
         let etag = calculate_etag(&data);
         Object {
             key,
@@ -71,7 +71,7 @@ impl Object {
     /// 
     /// ```
     /// use s3_learning_project::object::Object;
-    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3], None, None);
     /// assert_eq!(object.size(), 3);
     /// ```
     #[allow(dead_code)]

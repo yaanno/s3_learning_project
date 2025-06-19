@@ -151,7 +151,7 @@ impl S3Service {
     /// use s3_learning_project::s3_service::S3Service;
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
-    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3]).unwrap();
+    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3], None, None).unwrap();
     /// let object = s3_service.get_object("my-bucket", "my-object-key").unwrap();
     /// assert_eq!(object.data, vec![1, 2, 3]);
     /// ```
@@ -161,7 +161,7 @@ impl S3Service {
         key: &str,
         data: Vec<u8>,
         content_type: Option<String>,
-        user_metadata: HashMap<String, String>,
+        user_metadata: Option<HashMap<String, String>>,
     ) -> Result<&Object, S3Error> {
         if let Some(bucket) = self.buckets.get_mut(bucket_name) {
             let object = Object::new(key.to_string(), data, content_type, user_metadata);
@@ -194,7 +194,7 @@ impl S3Service {
     /// use s3_learning_project::s3_service::S3Service;
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
-    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3]).unwrap();
+    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3], None, None).unwrap();
     /// let object = s3_service.get_object("my-bucket", "my-object-key").unwrap();
     /// assert_eq!(object.data, vec![1, 2, 3]);
     /// ```
@@ -224,7 +224,7 @@ impl S3Service {
     /// use s3_learning_project::s3_service::S3Service;
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
-    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3]).unwrap();
+    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3], None, None).unwrap();
     /// s3_service.delete_object("my-bucket", "my-object-key").unwrap();
     /// ```
     pub fn delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error> {
@@ -256,7 +256,7 @@ impl S3Service {
     /// use s3_learning_project::s3_service::S3Service;
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
-    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3]).unwrap();
+    /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3], None, None).unwrap();
     /// let objects = s3_service.list_objects("my-bucket").unwrap();
     /// assert_eq!(objects, vec!["my-object-key".to_string()]);
     /// ```

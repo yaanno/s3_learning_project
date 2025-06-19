@@ -196,7 +196,7 @@ async fn put_object_handler(
         &object_key,
         body.to_vec(),
         content_type,
-        user_metadata,
+        Some(user_metadata),
     ) {
         Ok(object) => {
             info!("Object '{}' put into bucket '{}'.", object_key, bucket_name);

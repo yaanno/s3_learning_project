@@ -71,7 +71,7 @@ impl Bucket {
     /// use s3_learning_project::bucket::Bucket;
     /// use s3_learning_project::object::Object;
     /// let mut bucket = Bucket::new("my-bucket".to_string());
-    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3], None, None);
     /// bucket.put_object("my-object-key".to_string(), object);
     /// ```
     pub fn put_object(&mut self, key: String, object: Object) {
@@ -95,7 +95,7 @@ impl Bucket {
     /// use s3_learning_project::bucket::Bucket;
     /// use s3_learning_project::object::Object;
     /// let mut bucket = Bucket::new("my-bucket".to_string());
-    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
+    /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3], None, None);
     /// bucket.put_object("my-object-key".to_string(), object);
     /// let retrieved_object = bucket.get_object("my-object-key");
     /// assert!(retrieved_object.is_some());
