@@ -22,7 +22,7 @@ The current scope is limited to an in-memory, single-node application without pe
 
 ## 3. High-Level Architecture
 The system follows a simple client-server model, where the S3Service acts as the central "server" managing the storage.
-
+```
 +------------------+
 |                  |
 |    Application   | (e.g., main.rs)
@@ -52,7 +52,7 @@ The system follows a simple client-server model, where the S3Service acts as the
 |     Objects      | (Raw binary data)
 |                  |
 +------------------+
-
+```
 ## 4. Component Breakdown
 
 ### 4.1. S3Service (Core Service)

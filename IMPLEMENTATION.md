@@ -2,7 +2,7 @@
 
 ## 1. Project Structure
 The project is organized into a standard Rust cargo project with the following file structure:
-
+``` 
 s3_learning_project/
 ├── Cargo.toml
 └── src/
@@ -10,7 +10,7 @@ s3_learning_project/
     ├── s3_service.rs   // Defines the core S3Service struct and its methods
     ├── bucket.rs       // Defines the Bucket struct and its methods
     └── object.rs       // Defines the Object struct
-
+```
 ## 2. Module Breakdown and Implementation Details
 
 ### 2.1. src/main.rs
