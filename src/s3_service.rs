@@ -8,6 +8,7 @@ use std::collections::HashMap; // Import the Object struct from our 'object' mod
 
 /// Represents custom errors that can occur in our S3-like service.
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum S3Error {
     BucketAlreadyExists,
     BucketNotFound,
@@ -151,17 +152,23 @@ impl S3Service {
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
     /// s3_service.put_object("my-bucket", "my-object-key", vec![1, 2, 3]).unwrap();
+    /// let object = s3_service.get_object("my-bucket", "my-object-key").unwrap();
+    /// assert_eq!(object.data, vec![1, 2, 3]);
     /// ```
     pub fn put_object(
         &mut self,
         bucket_name: &str,
         key: &str,
         data: Vec<u8>,
-    ) -> Result<(), S3Error> {
+    ) -> Result<&Object, S3Error> {
         if let Some(bucket) = self.buckets.get_mut(bucket_name) {
             let object = Object::new(key.to_string(), data);
             bucket.put_object(key.to_string(), object);
-            Ok(())
+            let stored_object = bucket.get_object(key);
+            match stored_object {
+                Some(object) => Ok(object),
+                None => Err(S3Error::ObjectNotFound),
+            }
         } else {
             Err(S3Error::BucketNotFound)
         }

@@ -8,6 +8,7 @@ use crate::object::Object; // Import the Object struct from our 'object' module
 /// Represents an S3-like bucket.
 /// Each bucket has a name and stores a collection of objects using a HashMap
 /// where the key is the object's key (path) and the value is the Object itself.
+#[allow(dead_code)]
 pub struct Bucket {
     name: String,
     objects: HashMap<String, Object>, // Stores objects by their key
@@ -30,6 +31,7 @@ impl Bucket {
     /// use s3_learning_project::bucket::Bucket;
     /// let bucket = Bucket::new("my-bucket".to_string());
     /// ```
+    #[allow(dead_code)]
     pub fn new(name: String) -> Self {
         Bucket {
             name,
@@ -50,6 +52,7 @@ impl Bucket {
     /// let bucket = Bucket::new("my-bucket".to_string());
     /// assert_eq!(bucket.get_name(), "my-bucket");
     /// ```
+    #[allow(dead_code)]
     pub fn get_name(&self) -> &str {
         &self.name
     }
@@ -125,6 +128,7 @@ impl Bucket {
     /// let bucket = Bucket::new("my-bucket".to_string());
     /// assert!(bucket.is_empty());
     /// ```
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
     }

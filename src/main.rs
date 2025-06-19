@@ -129,12 +129,9 @@ async fn put_object_handler(
     let mut s3 = s3_service.lock().unwrap();
     // Convert Bytes to Vec<u8> for storage
     match s3.put_object(&bucket_name, &object_key, body.to_vec()) {
-        Ok(_) => {
+        Ok(object) => {
             info!("Object '{}' put into bucket '{}'.", object_key, bucket_name);
-            Ok(HttpResponse::Created().body(format!(
-                "Object '{}' put into bucket '{}'.",
-                object_key, bucket_name
-            )))
+            Ok(HttpResponse::Created().json(object))
         }
         Err(e) => {
             error!(error = %e, "Failed to store object");
