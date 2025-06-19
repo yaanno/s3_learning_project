@@ -1,18 +1,31 @@
 // main.rs
 // This file now sets up an HTTP server to expose the S3-like service.
 
-mod s3_service; // Declare the s3_service module
-mod bucket;     // Declare the bucket module
-mod object;     // Declare the object module
-
-use actix_web::{
-    web, App, HttpServer, HttpResponse, error::ResponseError, web::Bytes
-};
+mod bucket; // Declare the bucket module
+mod object;
+mod s3_service; // Declare the s3_service module // Declare the object module
 
 use actix_web::http::StatusCode;
-use s3_service::{S3Service, S3Error};
-use std::sync::{Arc, Mutex};
+use actix_web::{App, HttpResponse, HttpServer, error::ResponseError, web, web::Bytes};
+use s3_service::{S3Error, S3Service};
 use serde::Serialize; // For JSON responses
+use std::sync::{Arc, Mutex};
+use tracing::{error, info};
+use tracing_actix_web::TracingLogger;
+use tracing_subscriber::{EnvFilter, fmt};
+
+// Initialize tracing
+fn init_logging() {
+    // Initialize tracing with JSON formatter
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .json()
+        // .pretty()
+        .with_file(false)
+        .with_line_number(false)
+        .with_target(false)
+        .init();
+}
 
 // --- Helper function to map S3Error to Actix Web HTTP responses ---
 impl ResponseError for S3Error {
@@ -50,8 +63,16 @@ async fn create_bucket_handler(
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
     let mut s3 = s3_service.lock().unwrap(); // Acquire mutex lock
-    s3.create_bucket(&bucket_name)?; // The '?' operator propagates S3Error
-    Ok(HttpResponse::Created().body(format!("Bucket '{}' created.", bucket_name)))
+    match s3.create_bucket(&bucket_name) {
+        Ok(_) => {
+            info!("Bucket '{}' created.", bucket_name);
+            Ok(HttpResponse::Created().body(format!("Bucket '{}' created.", bucket_name)))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to create bucket");
+            Err(e)
+        }
+    }
 }
 
 /// Handles DELETE /buckets/{bucket_name}
@@ -62,8 +83,16 @@ async fn delete_bucket_handler(
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
     let mut s3 = s3_service.lock().unwrap();
-    s3.delete_bucket(&bucket_name)?;
-    Ok(HttpResponse::NoContent().body(format!("Bucket '{}' deleted.", bucket_name)))
+    match s3.delete_bucket(&bucket_name) {
+        Ok(_) => {
+            info!("Bucket '{}' deleted.", bucket_name);
+            Ok(HttpResponse::NoContent().body(format!("Bucket '{}' deleted.", bucket_name)))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to delete bucket");
+            Err(e)
+        }
+    }
 }
 
 /// Handles GET /buckets
@@ -78,40 +107,105 @@ async fn list_buckets_handler(
 
 /// Handles PUT /buckets/{bucket_name}/objects/{object_key}
 /// Puts an object into a bucket. The object data is taken from the request body.
+#[tracing::instrument(
+    name = "Put object",
+    skip(s3_service, body),
+    fields(
+        bucket = %path.0,
+        object_key = %path.1,
+        object_size = body.len()
+    )
+)]
 async fn put_object_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     path: web::Path<(String, String)>,
     body: Bytes, // Raw bytes from the request body
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
+    info!(
+        "Put object: bucket={}, object_key={}",
+        bucket_name, object_key
+    );
     let mut s3 = s3_service.lock().unwrap();
     // Convert Bytes to Vec<u8> for storage
-    s3.put_object(&bucket_name, &object_key, body.to_vec())?;
-    Ok(HttpResponse::Ok().body(format!("Object '{}' put into bucket '{}'.", object_key, bucket_name)))
+    match s3.put_object(&bucket_name, &object_key, body.to_vec()) {
+        Ok(_) => {
+            info!("Object '{}' put into bucket '{}'.", object_key, bucket_name);
+            Ok(HttpResponse::Created().body(format!(
+                "Object '{}' put into bucket '{}'.",
+                object_key, bucket_name
+            )))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to store object");
+            Err(e)
+        }
+    }
 }
 
 /// Handles GET /buckets/{bucket_name}/objects/{object_key}
 /// Retrieves an object from a bucket.
+#[tracing::instrument(
+    name = "Get object",
+    skip(s3_service),
+    fields(
+        bucket = %path.0,
+        object_key = %path.1
+    )
+)]
 async fn get_object_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
     let s3 = s3_service.lock().unwrap();
-    let object = s3.get_object(&bucket_name, &object_key)?; // Get object reference
-    Ok(HttpResponse::Ok().body(object.data.clone())) // Clone data to return owned Vec<u8>
+    match s3.get_object(&bucket_name, &object_key) {
+        Ok(object) => {
+            info!(
+                "Object '{}' retrieved from bucket '{}'.",
+                object_key, bucket_name
+            );
+            Ok(HttpResponse::Ok().body(object.data.clone())) // Clone data to return owned Vec<u8>
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to retrieve object");
+            Err(e)
+        }
+    }
 }
 
 /// Handles DELETE /buckets/{bucket_name}/objects/{object_key}
 /// Deletes an object from a bucket.
+#[tracing::instrument(
+    name = "Delete object",
+    skip(s3_service),
+    fields(
+        bucket = %path.0,
+        object_key = %path.1
+    )
+)]
 async fn delete_object_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
     let mut s3 = s3_service.lock().unwrap();
-    s3.delete_object(&bucket_name, &object_key)?;
-    Ok(HttpResponse::NoContent().body(format!("Object '{}' deleted from bucket '{}'.", object_key, bucket_name)))
+    match s3.delete_object(&bucket_name, &object_key) {
+        Ok(_) => {
+            info!(
+                "Object '{}' deleted from bucket '{}'.",
+                object_key, bucket_name
+            );
+            Ok(HttpResponse::NoContent().body(format!(
+                "Object '{}' deleted from bucket '{}'.",
+                object_key, bucket_name
+            )))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to delete object");
+            Err(e)
+        }
+    }
 }
 
 /// Handles GET /buckets/{bucket_name}/objects
@@ -122,43 +216,57 @@ async fn list_objects_handler(
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
     let s3 = s3_service.lock().unwrap();
-    let objects = s3.list_objects(&bucket_name)?;
-    Ok(HttpResponse::Ok().json(ListResponse { items: objects }))
+    match s3.list_objects(&bucket_name) {
+        Ok(objects) => {
+            info!(
+                "Listed {} objects in bucket '{}'.",
+                objects.len(),
+                bucket_name
+            );
+            Ok(HttpResponse::Ok().json(ListResponse { items: objects }))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to list objects");
+            Err(e)
+        }
+    }
 }
 
 // The main function is now asynchronous and sets up the Actix Web server.
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("Starting S3-like Storage HTTP API on http://127.0.0.1:8080");
+    // Initialize logging
+    init_logging();
 
-    // Create a shared S3Service instance wrapped in Arc (Atomic Reference Counting)
-    // and Mutex (for mutual exclusion, ensuring thread-safe access).
-    let s3_data = web::Data::new(Arc::new(Mutex::new(S3Service::new())));
+    info!("Starting S3-like Storage HTTP API on http://127.0.0.1:8080");
+
+    let s3_service = Arc::new(Mutex::new(S3Service::new()));
 
     HttpServer::new(move || {
         App::new()
-            .app_data(s3_data.clone()) // Pass the shared S3Service data to the app
+            // Add tracing middleware for request logging
+            .wrap(TracingLogger::default())
+            .app_data(web::Data::new(s3_service.clone()))
             .service(
                 web::resource("/buckets/{bucket_name}")
-                    .put(create_bucket_handler)    // PUT to create bucket
+                    .put(create_bucket_handler) // PUT to create bucket
                     .delete(delete_bucket_handler), // DELETE to delete bucket
             )
             .service(
-                web::resource("/buckets")
-                    .get(list_buckets_handler),    // GET to list all buckets
+                web::resource("/buckets").get(list_buckets_handler), // GET to list all buckets
             )
             .service(
                 web::resource("/buckets/{bucket_name}/objects/{object_key}")
-                    .put(put_object_handler)       // PUT to put object
-                    .get(get_object_handler)       // GET to get object
+                    .put(put_object_handler) // PUT to put object
+                    .get(get_object_handler) // GET to get object
                     .delete(delete_object_handler), // DELETE to delete object
             )
             .service(
-                web::resource("/buckets/{bucket_name}/objects")
-                    .get(list_objects_handler),    // GET to list objects in a bucket
+                web::resource("/buckets/{bucket_name}/objects").get(list_objects_handler), // GET to list objects in a bucket
             )
     })
     .bind(("127.0.0.1", 8080))?
+    .workers(5)
     .run()
     .await
 }

@@ -6,8 +6,13 @@ edition = "2024"
 [dependencies]
 actix-web = "4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-serde = { version = "1", features = ["derive"] } # For JSON serialization/deserialization
-bytes = "0.6" # For handling request bodies as Bytes
+serde = { version = "1", features = ["derive"] }
+bytes = "0.6"
+# Add these logging dependencies
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-actix-web = "0.7"  # For Actix Web integration
+tracing-log = "0.1"  # For log compatibility
 
 [lib]
 name = "s3_learning_project"
