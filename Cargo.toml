@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+actix-web = "4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] } # For JSON serialization/deserialization
+bytes = "0.6" # For handling request bodies as Bytes
 
 [lib]
 name = "s3_learning_project"

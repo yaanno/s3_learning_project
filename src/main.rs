@@ -1,185 +1,164 @@
 // main.rs
-// This is the main entry point of the Rust application.
-// It sets up and demonstrates the usage of our simplified S3-like service.
+// This file now sets up an HTTP server to expose the S3-like service.
 
 mod s3_service; // Declare the s3_service module
 mod bucket;     // Declare the bucket module
 mod object;     // Declare the object module
 
+use actix_web::{
+    web, App, HttpServer, HttpResponse, error::ResponseError, web::Bytes
+};
+
+use actix_web::http::StatusCode;
 use s3_service::{S3Service, S3Error};
+use std::sync::{Arc, Mutex};
+use serde::Serialize; // For JSON responses
 
-fn main() {
-    println!("Starting S3-like Storage System Simulation...");
-
-    // Create a new instance of our S3-like service
-    let mut s3 = S3Service::new();
-
-    // --- Demonstrate Bucket Operations ---
-
-    println!("\n--- Bucket Operations ---");
-
-    // 1. Create a bucket
-    match s3.create_bucket("my-first-bucket") {
-        Ok(_) => println!("Successfully created bucket: 'my-first-bucket'"),
-        Err(e) => eprintln!("Failed to create bucket: {}", e),
+// --- Helper function to map S3Error to Actix Web HTTP responses ---
+impl ResponseError for S3Error {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code())
+            .insert_header(actix_web::http::header::ContentType::plaintext())
+            .body(self.to_string())
     }
 
-    // Try to create the same bucket again (should fail)
-    match s3.create_bucket("my-first-bucket") {
-        Ok(_) => println!("Successfully created bucket: 'my-first-bucket' (unexpected)"),
-        Err(e) => println!("Failed to create bucket (as expected): {}", e),
+    fn status_code(&self) -> StatusCode {
+        match *self {
+            S3Error::BucketAlreadyExists => StatusCode::CONFLICT, // 409 Conflict
+            S3Error::BucketNotFound => StatusCode::NOT_FOUND,     // 404 Not Found
+            S3Error::ObjectNotFound => StatusCode::NOT_FOUND,     // 404 Not Found
+            S3Error::InvalidOperation(_) => StatusCode::BAD_REQUEST, // 400 Bad Request
+        }
     }
+}
 
-    // Create another bucket
-    match s3.create_bucket("my-second-bucket") {
-        Ok(_) => println!("Successfully created bucket: 'my-second-bucket'"),
-        Err(e) => eprintln!("Failed to create bucket: {}", e),
-    }
+// --- Request/Response Structs (for JSON where applicable) ---
 
-    // 2. List buckets
-    println!("\nListing all buckets:");
+// For listing buckets or objects
+#[derive(Serialize)]
+struct ListResponse {
+    items: Vec<String>,
+}
+
+// --- Handler Functions for API Endpoints ---
+
+/// Handles PUT /buckets/{bucket_name}
+/// Creates a new bucket.
+async fn create_bucket_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, S3Error> {
+    let bucket_name = path.into_inner();
+    let mut s3 = s3_service.lock().unwrap(); // Acquire mutex lock
+    s3.create_bucket(&bucket_name)?; // The '?' operator propagates S3Error
+    Ok(HttpResponse::Created().body(format!("Bucket '{}' created.", bucket_name)))
+}
+
+/// Handles DELETE /buckets/{bucket_name}
+/// Deletes an existing bucket.
+async fn delete_bucket_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, S3Error> {
+    let bucket_name = path.into_inner();
+    let mut s3 = s3_service.lock().unwrap();
+    s3.delete_bucket(&bucket_name)?;
+    Ok(HttpResponse::NoContent().body(format!("Bucket '{}' deleted.", bucket_name)))
+}
+
+/// Handles GET /buckets
+/// Lists all existing buckets.
+async fn list_buckets_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+) -> Result<HttpResponse, S3Error> {
+    let s3 = s3_service.lock().unwrap();
     let buckets = s3.list_buckets();
-    if buckets.is_empty() {
-        println!("No buckets found.");
-    } else {
-        for bucket_name in buckets {
-            println!(" - {}", bucket_name);
-        }
-    }
+    Ok(HttpResponse::Ok().json(ListResponse { items: buckets }))
+}
 
-    // --- Demonstrate Object Operations ---
+/// Handles PUT /buckets/{bucket_name}/objects/{object_key}
+/// Puts an object into a bucket. The object data is taken from the request body.
+async fn put_object_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<(String, String)>,
+    body: Bytes, // Raw bytes from the request body
+) -> Result<HttpResponse, S3Error> {
+    let (bucket_name, object_key) = path.into_inner();
+    let mut s3 = s3_service.lock().unwrap();
+    // Convert Bytes to Vec<u8> for storage
+    s3.put_object(&bucket_name, &object_key, body.to_vec())?;
+    Ok(HttpResponse::Ok().body(format!("Object '{}' put into bucket '{}'.", object_key, bucket_name)))
+}
 
-    println!("\n--- Object Operations ---");
+/// Handles GET /buckets/{bucket_name}/objects/{object_key}
+/// Retrieves an object from a bucket.
+async fn get_object_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, S3Error> {
+    let (bucket_name, object_key) = path.into_inner();
+    let s3 = s3_service.lock().unwrap();
+    let object = s3.get_object(&bucket_name, &object_key)?; // Get object reference
+    Ok(HttpResponse::Ok().body(object.data.clone())) // Clone data to return owned Vec<u8>
+}
 
-    let bucket_name = "my-first-bucket";
+/// Handles DELETE /buckets/{bucket_name}/objects/{object_key}
+/// Deletes an object from a bucket.
+async fn delete_object_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, S3Error> {
+    let (bucket_name, object_key) = path.into_inner();
+    let mut s3 = s3_service.lock().unwrap();
+    s3.delete_object(&bucket_name, &object_key)?;
+    Ok(HttpResponse::NoContent().body(format!("Object '{}' deleted from bucket '{}'.", object_key, bucket_name)))
+}
 
-    // 1. Put an object into a bucket
-    let object_key_1 = "documents/report.txt";
-    let object_data_1 = "This is the content of my important report.".as_bytes().to_vec();
-    match s3.put_object(bucket_name, object_key_1, object_data_1.clone()) {
-        Ok(_) => println!("Successfully put object '{}' into bucket '{}'", object_key_1, bucket_name),
-        Err(e) => eprintln!("Failed to put object: {}", e),
-    }
+/// Handles GET /buckets/{bucket_name}/objects
+/// Lists all objects in a specific bucket.
+async fn list_objects_handler(
+    s3_service: web::Data<Arc<Mutex<S3Service>>>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, S3Error> {
+    let bucket_name = path.into_inner();
+    let s3 = s3_service.lock().unwrap();
+    let objects = s3.list_objects(&bucket_name)?;
+    Ok(HttpResponse::Ok().json(ListResponse { items: objects }))
+}
 
-    let object_key_2 = "images/profile.jpg";
-    let object_data_2 = vec![0xDE, 0xAD, 0xBE, 0xEF]; // Simulate binary data
-    match s3.put_object(bucket_name, object_key_2, object_data_2.clone()) {
-        Ok(_) => println!("Successfully put object '{}' into bucket '{}'", object_key_2, bucket_name),
-        Err(e) => eprintln!("Failed to put object: {}", e),
-    }
+// The main function is now asynchronous and sets up the Actix Web server.
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    println!("Starting S3-like Storage HTTP API on http://127.0.0.1:8080");
 
-    // Try to put an object into a non-existent bucket
-    let non_existent_bucket = "non-existent-bucket";
-    match s3.put_object(non_existent_bucket, "test.txt", "data".as_bytes().to_vec()) {
-        Ok(_) => println!("Successfully put object (unexpected)"),
-        Err(e) => println!("Failed to put object into non-existent bucket (as expected): {}", e),
-    }
+    // Create a shared S3Service instance wrapped in Arc (Atomic Reference Counting)
+    // and Mutex (for mutual exclusion, ensuring thread-safe access).
+    let s3_data = web::Data::new(Arc::new(Mutex::new(S3Service::new())));
 
-    // 2. Get an object from a bucket
-    println!("\nGetting object '{}' from bucket '{}':", object_key_1, bucket_name);
-    match s3.get_object(bucket_name, object_key_1) {
-        Ok(object) => {
-            println!("  Content: '{}'", String::from_utf8_lossy(&object.data));
-            println!("  Size: {} bytes", object.data.len());
-        },
-        Err(e) => eprintln!("Failed to get object: {}", e),
-    }
-
-    println!("\nGetting non-existent object 'nonexistent.txt' from bucket '{}':", bucket_name);
-    match s3.get_object(bucket_name, "nonexistent.txt") {
-        Ok(_) => println!("Successfully got non-existent object (unexpected)"),
-        Err(e) => println!("Failed to get non-existent object (as expected): {}", e),
-    }
-
-    // 3. List objects in a bucket
-    println!("\nListing objects in bucket '{}':", bucket_name);
-    match s3.list_objects(bucket_name) {
-        Ok(keys) => {
-            if keys.is_empty() {
-                println!("  No objects found in this bucket.");
-            } else {
-                for key in keys {
-                    println!("  - {}", key);
-                }
-            }
-        },
-        Err(e) => eprintln!("Failed to list objects: {}", e),
-    }
-
-    println!("\nListing objects in non-existent bucket '{}':", non_existent_bucket);
-    match s3.list_objects(non_existent_bucket) {
-        Ok(_) => println!("Successfully listed objects in non-existent bucket (unexpected)"),
-        Err(e) => println!("Failed to list objects in non-existent bucket (as expected): {}", e),
-    }
-
-    // 4. Delete an object from a bucket
-    println!("\nDeleting object '{}' from bucket '{}':", object_key_1, bucket_name);
-    match s3.delete_object(bucket_name, object_key_1) {
-        Ok(_) => println!("Successfully deleted object '{}'", object_key_1),
-        Err(e) => eprintln!("Failed to delete object: {}", e),
-    }
-
-    // Try to delete a non-existent object
-    println!("\nDeleting non-existent object 'nonexistent.txt' from bucket '{}':", bucket_name);
-    match s3.delete_object(bucket_name, "nonexistent.txt") {
-        Ok(_) => println!("Successfully deleted non-existent object (unexpected)"),
-        Err(e) => println!("Failed to delete non-existent object (as expected): {}", e),
-    }
-
-    // List objects again after deletion
-    println!("\nListing objects in bucket '{}' after deletion:", bucket_name);
-    match s3.list_objects(bucket_name) {
-        Ok(keys) => {
-            if keys.is_empty() {
-                println!("  No objects found in this bucket.");
-            } else {
-                for key in keys {
-                    println!("  - {}", key);
-                }
-            }
-        },
-        Err(e) => eprintln!("Failed to list objects: {}", e),
-    }
-
-    // --- Demonstrate Bucket Deletion ---
-
-    println!("\n--- Bucket Deletion ---");
-
-    // Try to delete a non-empty bucket (should fail in a real S3)
-    // For simplicity, our current implementation allows deleting non-empty buckets.
-    // In a real S3, you'd need to delete all objects first or use a force flag.
-    println!("\nAttempting to delete 'my-first-bucket' (still contains an object):");
-    match s3.delete_bucket(bucket_name) {
-        Ok(_) => println!("Successfully deleted bucket: '{}'", bucket_name),
-        Err(e) => eprintln!("Failed to delete bucket: {}", e),
-    }
-
-    // Verify deletion
-    println!("\nListing all buckets after deletion attempt:");
-    let buckets_after_delete = s3.list_buckets();
-    if buckets_after_delete.is_empty() {
-        println!("No buckets found.");
-    } else {
-        for name in buckets_after_delete {
-            println!(" - {}", name);
-        }
-    }
-
-    // Delete the second bucket
-    match s3.delete_bucket("my-second-bucket") {
-        Ok(_) => println!("Successfully deleted bucket: 'my-second-bucket'"),
-        Err(e) => eprintln!("Failed to delete bucket: {}", e),
-    }
-
-    println!("\nFinal check: Listing all buckets:");
-    let final_buckets = s3.list_buckets();
-    if final_buckets.is_empty() {
-        println!("No buckets found.");
-    } else {
-        for bucket_name in final_buckets {
-            println!(" - {}", bucket_name);
-        }
-    }
-
-    println!("\nSimulation Finished.");
+    HttpServer::new(move || {
+        App::new()
+            .app_data(s3_data.clone()) // Pass the shared S3Service data to the app
+            .service(
+                web::resource("/buckets/{bucket_name}")
+                    .put(create_bucket_handler)    // PUT to create bucket
+                    .delete(delete_bucket_handler), // DELETE to delete bucket
+            )
+            .service(
+                web::resource("/buckets")
+                    .get(list_buckets_handler),    // GET to list all buckets
+            )
+            .service(
+                web::resource("/buckets/{bucket_name}/objects/{object_key}")
+                    .put(put_object_handler)       // PUT to put object
+                    .get(get_object_handler)       // GET to get object
+                    .delete(delete_object_handler), // DELETE to delete object
+            )
+            .service(
+                web::resource("/buckets/{bucket_name}/objects")
+                    .get(list_objects_handler),    // GET to list objects in a bucket
+            )
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }
