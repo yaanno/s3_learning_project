@@ -49,15 +49,15 @@ impl Object {
     /// use s3_learning_project::object::Object;
     /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3]);
     /// ```
-    pub fn new(key: String, data: Vec<u8>) -> Self {
+    pub fn new(key: String, data: Vec<u8>, content_type: Option<String>, user_metadata: HashMap<String, String>) -> Self {
         let etag = calculate_etag(&data);
         Object {
             key,
             data,
-            content_type: None,
+            content_type,
             etag,
             last_modified: std::time::SystemTime::now(),
-            user_metadata: HashMap::new(),
+            user_metadata,
         }
     }
 

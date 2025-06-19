@@ -160,9 +160,11 @@ impl S3Service {
         bucket_name: &str,
         key: &str,
         data: Vec<u8>,
+        content_type: Option<String>,
+        user_metadata: HashMap<String, String>,
     ) -> Result<&Object, S3Error> {
         if let Some(bucket) = self.buckets.get_mut(bucket_name) {
-            let object = Object::new(key.to_string(), data);
+            let object = Object::new(key.to_string(), data, content_type, user_metadata);
             bucket.put_object(key.to_string(), object);
             let stored_object = bucket.get_object(key);
             match stored_object {
