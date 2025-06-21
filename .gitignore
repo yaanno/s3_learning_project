@@ -53,3 +53,6 @@ target/
 # These are all the files that `cargo check` generates.
 # You probably don't want to commit them.
 target/
+
+# SQLite database file
+*.db

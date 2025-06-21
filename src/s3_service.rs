@@ -2,32 +2,33 @@
 // This module defines the core S3Service, which acts as our in-memory S3 system.
 // It manages buckets and provides methods for S3-like operations.
 
-use crate::bucket::Bucket; // Import the Bucket struct from our 'bucket' module
-use crate::object::Object;
-use std::collections::HashMap; // Import the Object struct from our 'object' module
+use crate::bucket::{Bucket, BucketError}; // Import the Bucket struct from our 'bucket' module
+use crate::object::{Object, ObjectError};
+use crate::Storage;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+// Import the Object struct from our 'object' module
+use thiserror::Error;
 
 /// Represents custom errors that can occur in our S3-like service.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Error)] // Add Error derive
 #[allow(dead_code)]
 pub enum S3Error {
-    BucketAlreadyExists,
-    BucketNotFound,
-    ObjectNotFound,
-    InvalidOperation(String), // For general invalid operations with a message
+    #[error("Bucket '{0}' already exists")]
+    BucketAlreadyExists(String), // Add bucket name for better error message
+    #[error("Bucket '{0}' not found")]
+    BucketNotFound(String), // Add bucket name for better error message
+    #[error("Object '{0}' not found in bucket '{1}'")]
+    ObjectNotFound(String, String), // Add object key and bucket name for better error message
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
+    #[error("Object creation failed: {0}")]
+    ObjectCreationFailed(#[from] ObjectError), // New variant to wrap ObjectError
+    // #[error("Storage error: {0}")]
+    // StorageError(#[from] StorageError),
+    #[error("Bucket error: {0}")]
+    BucketError(#[from] BucketError),
 }
-
-impl std::fmt::Display for S3Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            S3Error::BucketAlreadyExists => write!(f, "Bucket already exists"),
-            S3Error::BucketNotFound => write!(f, "Bucket not found"),
-            S3Error::ObjectNotFound => write!(f, "Object not found"),
-            S3Error::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for S3Error {}
 
 /// The main S3-like service structure.
 /// It holds a collection of buckets, simulated in-memory using a HashMap.
@@ -72,12 +73,14 @@ impl S3Service {
     /// let mut s3_service = S3Service::new();
     /// s3_service.create_bucket("my-bucket").unwrap();
     /// ```
-    pub fn create_bucket(&mut self, name: &str) -> Result<(), S3Error> {
+    pub fn create_bucket(&mut self, name: &str, storage: Arc<Mutex<Storage>>) -> Result<(), S3Error> {
         if self.buckets.contains_key(name) {
-            return Err(S3Error::BucketAlreadyExists);
+            return Err(S3Error::BucketAlreadyExists(name.to_string()));
         }
-        self.buckets
-            .insert(name.to_string(), Bucket::new(name.to_string()));
+        self.buckets.insert(
+            name.to_string(),
+            Bucket::new(name.to_string(), storage),
+        );
         Ok(())
     }
 
@@ -108,7 +111,7 @@ impl S3Service {
         if self.buckets.remove(name).is_some() {
             Ok(())
         } else {
-            Err(S3Error::BucketNotFound)
+            Err(S3Error::BucketNotFound(name.to_string()))
         }
     }
 
@@ -155,24 +158,16 @@ impl S3Service {
     /// let object = s3_service.get_object("my-bucket", "my-object-key").unwrap();
     /// assert_eq!(object.data, vec![1, 2, 3]);
     /// ```
-    pub fn put_object(
-        &mut self,
-        bucket_name: &str,
-        key: &str,
-        data: Vec<u8>,
-        content_type: Option<String>,
-        user_metadata: Option<HashMap<String, String>>,
-    ) -> Result<&Object, S3Error> {
+    pub fn put_object(&mut self, bucket_name: &str, object: Object) -> Result<Object, S3Error> {
         if let Some(bucket) = self.buckets.get_mut(bucket_name) {
-            let object = Object::new(key.to_string(), data, content_type, user_metadata);
-            bucket.put_object(key.to_string(), object);
-            let stored_object = bucket.get_object(key);
+            let _ = bucket.put_object(object.clone());
+            let stored_object = bucket.get_object(&object.key);
             match stored_object {
-                Some(object) => Ok(object),
-                None => Err(S3Error::ObjectNotFound),
+                Ok(object) => Ok(object),
+                Err(e) => Err(S3Error::BucketError(e)),
             }
         } else {
-            Err(S3Error::BucketNotFound)
+            Err(S3Error::BucketNotFound(bucket_name.to_string()))
         }
     }
 
@@ -198,11 +193,14 @@ impl S3Service {
     /// let object = s3_service.get_object("my-bucket", "my-object-key").unwrap();
     /// assert_eq!(object.data, vec![1, 2, 3]);
     /// ```
-    pub fn get_object(&self, bucket_name: &str, key: &str) -> Result<&Object, S3Error> {
+    pub fn get_object(&self, bucket_name: &str, key: &str) -> Result<Object, S3Error> {
         if let Some(bucket) = self.buckets.get(bucket_name) {
-            bucket.get_object(key).ok_or(S3Error::ObjectNotFound)
+            match bucket.get_object(key) {
+                Ok(object) => Ok(object),
+                Err(e) => Err(S3Error::BucketError(e)),
+            }
         } else {
-            Err(S3Error::BucketNotFound)
+            Err(S3Error::BucketNotFound(bucket_name.to_string()))
         }
     }
 
@@ -229,13 +227,16 @@ impl S3Service {
     /// ```
     pub fn delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error> {
         if let Some(bucket) = self.buckets.get_mut(bucket_name) {
-            if bucket.delete_object(key) {
+            if bucket.delete_object(key).is_ok() {
                 Ok(())
             } else {
-                Err(S3Error::ObjectNotFound)
+                Err(S3Error::ObjectNotFound(
+                    key.to_string(),
+                    bucket_name.to_string(),
+                ))
             }
         } else {
-            Err(S3Error::BucketNotFound)
+            Err(S3Error::BucketNotFound(bucket_name.to_string()))
         }
     }
 
@@ -262,9 +263,12 @@ impl S3Service {
     /// ```
     pub fn list_objects(&self, bucket_name: &str) -> Result<Vec<String>, S3Error> {
         if let Some(bucket) = self.buckets.get(bucket_name) {
-            Ok(bucket.list_objects())
+            match bucket.list_objects() {
+                Ok(objects) => Ok(objects),
+                Err(e) => Err(S3Error::BucketError(e)),
+            }
         } else {
-            Err(S3Error::BucketNotFound)
+            Err(S3Error::BucketNotFound(bucket_name.to_string()))
         }
     }
 }
