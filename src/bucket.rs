@@ -66,16 +66,24 @@ impl Bucket {
             user_metadata.cloned(),
         )?; // Converts ObjectError into BucketError::ObjectDataError
 
-        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
-        // Delegate the actual storage persistence to the Storage module
-        storage_lock.put_object(&self.name, object_to_store)?; // Converts StorageError into BucketError::Storage
+        let result = {
+            let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
+            storage_lock.put_object(&self.name, object_to_store)
+        };
 
-        // release the lock
-        drop(storage_lock);
-
-        // Retrieve the object after putting it, to ensure we return the persisted state
-        // (e.g., with updated etag or last_modified from storage logic)
-        self.get_object(key) // This handles the ObjectNotFound and Storage errors
+        match result {
+            Ok(_) => {
+                if let Ok(object) = self.get_object(key) {
+                    Ok(object)
+                } else {
+                    Err(BucketError::Storage(StorageError::ObjectNotFound(
+                        key.to_string(),
+                        self.name.clone(),
+                    )))
+                }
+            }
+            Err(e) => Err(BucketError::Storage(e)),
+        }
     }
 
     /// Gets an object from the bucket.
