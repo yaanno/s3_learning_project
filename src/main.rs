@@ -276,6 +276,9 @@ async fn get_object_handler(
                 S3Error::ObjectNotFound(_, _) => Ok(HttpResponse::NotFound().json(ErrorResponse {
                     message: e.to_string(),
                 })),
+                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
                 _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
                     message: e.to_string(),
                 })),

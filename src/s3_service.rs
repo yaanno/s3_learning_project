@@ -32,7 +32,6 @@ impl S3Service {
     }
 
     pub fn create_bucket(&mut self, name: &str) -> Result<(), S3Error> {
-        println!("Creating bucket: {}", name);
         let mut storage_lock = self.storage.lock().unwrap();
 
         match storage_lock.create_bucket(name) {
@@ -53,8 +52,10 @@ impl S3Service {
         match storage_lock._delete_bucket(name) {
             Ok(_) => Ok(()),
             Err(StorageError::BucketNotFoundInStorage(bucket_name)) => {
-                // <--- Handle new StorageError variant
                 Err(S3Error::BucketNotFound(bucket_name))
+            }
+            Err(StorageError::ObjectNotFound(bucket_name, object_name)) => {
+                Err(S3Error::ObjectNotFound(bucket_name, object_name))
             }
             Err(e) => Err(S3Error::InternalStorageError(format!(
                 "Failed to delete bucket from storage: {}",
@@ -102,9 +103,18 @@ impl S3Service {
 
     pub fn get_object(&self, bucket_name: &str, key: &str) -> Result<Object, S3Error> {
         let bucket = self.get_bucket_instance(bucket_name)?;
-        bucket
-            .get_object(key)
-            .map_err(S3Error::BucketOperationFailed)
+        match bucket.get_object(key) {
+            Ok(object) => Ok(object),
+            Err(BucketError::ObjectNotFound(_)) => Err(S3Error::ObjectNotFound(
+                key.to_string(),
+                bucket_name.to_string(),
+            )),
+            Err(BucketError::Storage(e)) => Err(S3Error::InternalStorageError(format!(
+                "Error getting object from storage: {}",
+                e
+            ))),
+            Err(e) => Err(S3Error::BucketOperationFailed(e)),
+        }
     }
 
     pub fn delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error> {
