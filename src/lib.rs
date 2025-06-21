@@ -1,7 +1,9 @@
 pub mod bucket;
+pub mod handlers;
 pub mod object;
 pub mod s3_service;
 pub mod storage;
+pub mod structs;
 
 // re-export the types
 pub use bucket::Bucket;
