@@ -11,8 +11,8 @@ use crate::S3Error;
 use crate::S3Service;
 use crate::object::Object;
 use crate::structs::{
-    BucketCreatedResponse, BucketDeletedResponse, ErrorResponse, ListResponse,
-    ObjectCreatedResponse, ObjectDeletedResponse, ObjectListResponse,
+    BucketCreatedResponse, BucketDeletedResponse, ListResponse, ObjectCreatedResponse,
+    ObjectDeletedResponse, ObjectListResponse,
 };
 
 /// Handles GET /buckets/{bucket_name}/objects/{object_key}
@@ -54,17 +54,7 @@ pub async fn get_object_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to retrieve object");
-            match e {
-                S3Error::ObjectNotFound(_, _) => Ok(HttpResponse::NotFound().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }
@@ -98,16 +88,7 @@ pub async fn create_bucket_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to create bucket");
-            match e {
-                S3Error::BucketAlreadyExists(_) => {
-                    Ok(HttpResponse::Conflict().json(ErrorResponse {
-                        message: e.to_string(),
-                    }))
-                }
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }
@@ -139,14 +120,7 @@ pub async fn delete_bucket_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to delete bucket");
-            match e {
-                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }
@@ -226,17 +200,23 @@ pub async fn put_object_handler(
         bucket_name, object_key
     );
 
-    let mut s3 = s3_service.lock().unwrap();
+    // Create the Object before acquiring the lock
+    let object = Object::new(
+        object_key.clone(),
+        body.to_vec(),
+        content_type,
+        Some(user_metadata),
+    )?;
 
-    match s3.put_object(
-        &bucket_name,
-        Object::new(
-            object_key.clone(),
-            body.to_vec(),
-            content_type,
-            Some(user_metadata),
-        )?,
-    ) {
+    // Acquire the lock, call put_object, and release the lock immediately
+    let result = {
+        let mut s3 = s3_service.lock().map_err(|_| {
+            S3Error::InternalStorageError("Failed to acquire lock on S3 service".to_string())
+        })?;
+        s3.put_object(&bucket_name, object)
+    };
+
+    match result {
         Ok(returned_object) => {
             info!(
                 "Object '{}' put into bucket '{}'.",
@@ -251,16 +231,7 @@ pub async fn put_object_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to store object");
-            match e {
-                S3Error::ObjectCreationFailed(_) => {
-                    Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                        message: e.to_string(),
-                    }))
-                }
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }
@@ -304,14 +275,7 @@ pub async fn delete_object_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to delete object");
-            match e {
-                S3Error::ObjectNotFound(_, _) => Ok(HttpResponse::NotFound().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }
@@ -347,14 +311,7 @@ pub async fn list_objects_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to list objects");
-            match e {
-                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: e.to_string(),
-                })),
-            }
+            Err(e)
         }
     }
 }

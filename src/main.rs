@@ -9,6 +9,7 @@ mod storage;
 mod structs;
 
 use actix_web::http::StatusCode;
+use actix_web::http::header::ContentType;
 use actix_web::web;
 use actix_web::{App, HttpResponse, HttpServer, error::ResponseError};
 use handlers::{
@@ -38,13 +39,23 @@ fn init_logging() {
 // --- Helper function to map S3Error to Actix Web HTTP responses ---
 impl ResponseError for S3Error {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code())
-            .insert_header(actix_web::http::header::ContentType::json())
-            .json(self.to_string())
+        let status = self.status_code();
+        let error_message = self.to_string();
+
+        HttpResponse::build(status)
+            .insert_header(ContentType::json())
+            .json(serde_json::json!({
+                "error": error_message,
+                "code": status.as_u16()
+            }))
     }
 
     fn status_code(&self) -> StatusCode {
         match self {
+            S3Error::BucketAlreadyExists(_) => StatusCode::CONFLICT,
+            S3Error::BucketNotFound(_) => StatusCode::NOT_FOUND,
+            S3Error::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
+            S3Error::BucketOperationFailed(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

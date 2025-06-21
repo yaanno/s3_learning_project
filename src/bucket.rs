@@ -7,8 +7,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BucketError {
-    #[error("Object '{0}' not found in bucket")]
-    ObjectNotFound(String),
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError), // Allow converting StorageError to BucketError
     #[error("Invalid object data: {0}")] // Added for Object creation errors
@@ -72,6 +70,9 @@ impl Bucket {
         // Delegate the actual storage persistence to the Storage module
         storage_lock.put_object(&self.name, object_to_store)?; // Converts StorageError into BucketError::Storage
 
+        // release the lock
+        drop(storage_lock);
+
         // Retrieve the object after putting it, to ensure we return the persisted state
         // (e.g., with updated etag or last_modified from storage logic)
         self.get_object(key) // This handles the ObjectNotFound and Storage errors
@@ -88,12 +89,9 @@ impl Bucket {
     /// * `Result<Object, BucketError>` - The object that was retrieved, or an error.
     pub fn get_object(&self, key: &str) -> Result<Object, BucketError> {
         let storage_lock = self.storage.lock().unwrap();
-        storage_lock
-            .get_object(&self.name, key)
-            .map_err(|e| match e {
-                StorageError::ObjectNotFound(_, _) => BucketError::ObjectNotFound(key.to_string()),
-                _ => BucketError::Storage(e), // Convert other StorageError types
-            })
+        let object = storage_lock.get_object(&self.name, key)?;
+        drop(storage_lock);
+        Ok(object)
     }
 
     /// Deletes an object from the bucket.
@@ -107,9 +105,9 @@ impl Bucket {
     /// * `Result<bool, BucketError>` - Whether the object was deleted, or an error.
     pub fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
         let mut storage_lock = self.storage.lock().unwrap();
-        storage_lock
-            .delete_object(&self.name, key)
-            .map_err(BucketError::Storage) // Convert any StorageError
+        let result = storage_lock.delete_object(&self.name, key)?;
+        drop(storage_lock);
+        Ok(result)
     }
 
     /// Lists all objects in the bucket.
@@ -119,8 +117,8 @@ impl Bucket {
     /// * `Result<Vec<String>, BucketError>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self) -> Result<Vec<String>, BucketError> {
         let storage_lock = self.storage.lock().unwrap();
-        storage_lock
-            .list_objects(&self.name)
-            .map_err(BucketError::Storage)
+        let result = storage_lock.list_objects(&self.name)?;
+        drop(storage_lock);
+        Ok(result)
     }
 }

@@ -43,7 +43,10 @@ impl S3Service {
     pub fn create_bucket(&mut self, name: &str) -> Result<(), S3Error> {
         let mut storage_lock = self.storage.lock().unwrap();
 
-        match storage_lock.create_bucket(name) {
+        let result = storage_lock.create_bucket(name);
+        drop(storage_lock);
+
+        match result {
             Ok(_) => Ok(()),
             Err(StorageError::BucketAlreadyExistsInStorage(bucket_name)) => {
                 Err(S3Error::BucketAlreadyExists(bucket_name))
@@ -67,13 +70,13 @@ impl S3Service {
     pub fn delete_bucket(&mut self, name: &str) -> Result<(), S3Error> {
         let mut storage_lock = self.storage.lock().unwrap();
 
-        match storage_lock._delete_bucket(name) {
+        let result = storage_lock._delete_bucket(name);
+        drop(storage_lock);
+
+        match result {
             Ok(_) => Ok(()),
             Err(StorageError::BucketNotFoundInStorage(bucket_name)) => {
                 Err(S3Error::BucketNotFound(bucket_name))
-            }
-            Err(StorageError::ObjectNotFound(bucket_name, object_name)) => {
-                Err(S3Error::ObjectNotFound(bucket_name, object_name))
             }
             Err(e) => Err(S3Error::InternalStorageError(format!(
                 "Failed to delete bucket from storage: {}",
@@ -89,7 +92,9 @@ impl S3Service {
     /// * `Vec<String>` - A vector of bucket names.
     pub fn list_buckets(&self) -> Vec<String> {
         let storage_lock = self.storage.lock().unwrap();
-        match storage_lock.list_buckets() {
+        let result = storage_lock.list_buckets();
+        drop(storage_lock);
+        match result {
             Ok(buckets) => buckets,
             Err(e) => {
                 eprintln!("Error listing buckets from storage: {}", e);
@@ -101,8 +106,9 @@ impl S3Service {
     /// Helper to get a Bucket instance on demand
     fn get_bucket_instance(&self, bucket_name: &str) -> Result<Bucket, S3Error> {
         let storage_lock = self.storage.lock().unwrap();
-        // Use the dedicated bucket_exists method
-        match storage_lock.bucket_exists(bucket_name) {
+        let result = storage_lock.bucket_exists(bucket_name);
+        drop(storage_lock);
+        match result {
             Ok(true) => Ok(Bucket::new(bucket_name.to_string(), self.storage.clone())),
             Ok(false) => Err(S3Error::BucketNotFound(bucket_name.to_string())),
             Err(e) => Err(S3Error::InternalStorageError(format!(
@@ -124,14 +130,16 @@ impl S3Service {
     /// * `Result<Object, S3Error>` - The put object, or an error.
     pub fn put_object(&mut self, bucket_name: &str, object: Object) -> Result<Object, S3Error> {
         let mut bucket = self.get_bucket_instance(bucket_name)?;
-        bucket
-            .put_object(
-                &object.key,
-                &object.data,
-                object.content_type.as_deref(),
-                object.user_metadata.as_ref(),
-            )
-            .map_err(S3Error::BucketOperationFailed)
+        let result = bucket.put_object(
+            &object.key,
+            &object.data,
+            object.content_type.as_deref(),
+            object.user_metadata.as_ref(),
+        );
+        match result {
+            Ok(object) => Ok(object),
+            Err(e) => Err(S3Error::BucketOperationFailed(e)),
+        }
     }
 
     /// Retrieves an object from a bucket.
@@ -148,14 +156,6 @@ impl S3Service {
         let bucket = self.get_bucket_instance(bucket_name)?;
         match bucket.get_object(key) {
             Ok(object) => Ok(object),
-            Err(BucketError::ObjectNotFound(_)) => Err(S3Error::ObjectNotFound(
-                key.to_string(),
-                bucket_name.to_string(),
-            )),
-            Err(BucketError::Storage(e)) => Err(S3Error::InternalStorageError(format!(
-                "Error getting object from storage: {}",
-                e
-            ))),
             Err(e) => Err(S3Error::BucketOperationFailed(e)),
         }
     }
@@ -193,8 +193,10 @@ impl S3Service {
     /// * `Result<Vec<String>, S3Error>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self, bucket_name: &str) -> Result<Vec<String>, S3Error> {
         let bucket = self.get_bucket_instance(bucket_name)?;
-        bucket
-            .list_objects()
-            .map_err(S3Error::BucketOperationFailed)
+        let result = bucket.list_objects();
+        match result {
+            Ok(objects) => Ok(objects),
+            Err(e) => Err(S3Error::BucketOperationFailed(e)),
+        }
     }
 }
