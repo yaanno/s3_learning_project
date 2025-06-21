@@ -1,16 +1,12 @@
 // s3_service.rs
-// (This is the expected content based on your main.rs and the fix)
-
-use crate::bucket::{Bucket, BucketError}; // Ensure Bucket and BucketError are imported
-use crate::object::{Object, ObjectError}; // Ensure Object and ObjectError are imported
-use crate::storage::{Storage}; // Ensure Storage and StorageError are imported
-use std::collections::HashMap;
+use crate::bucket::{Bucket, BucketError};
+use crate::object::{Object, ObjectError};
+use crate::storage::{Storage, StorageError};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-use serde::Serialize;
 
 /// Represents custom errors that can occur in our S3-like service.
-#[derive(Debug, Error, Serialize)]
+#[derive(Debug, Error)]
 pub enum S3Error {
     #[error("Bucket '{0}' already exists")]
     BucketAlreadyExists(String),
@@ -20,93 +16,113 @@ pub enum S3Error {
     ObjectNotFound(String, String),
     #[error("Object creation failed: {0}")]
     ObjectCreationFailed(#[from] ObjectError),
-    #[error("Bucket operation failed: {0}")] // This variant needs to be present
+    #[error("Bucket operation failed: {0}")]
     BucketOperationFailed(#[from] BucketError),
+    #[error("Internal storage error: {0}")]
+    InternalStorageError(String),
 }
 
-/// The main S3-like service structure.
 pub struct S3Service {
-    buckets: HashMap<String, Bucket>,
+    storage: Arc<Mutex<Storage>>,
 }
 
 impl S3Service {
-    /// Creates a new, empty S3Service instance.
-    pub fn new() -> Self {
-        S3Service {
-            buckets: HashMap::new(),
-        }
+    pub fn new(storage: Arc<Mutex<Storage>>) -> Self {
+        S3Service { storage }
     }
 
-    /// Creates a new bucket with the given name.
-    /// It now takes the `Arc<Mutex<Storage>>` to pass to the `Bucket` constructor.
-    pub fn create_bucket(&mut self, name: &str, storage: Arc<Mutex<Storage>>) -> Result<(), S3Error> {
-        if self.buckets.contains_key(name) {
-            return Err(S3Error::BucketAlreadyExists(name.to_string()));
+    pub fn create_bucket(&mut self, name: &str) -> Result<(), S3Error> {
+        println!("Creating bucket: {}", name);
+        let mut storage_lock = self.storage.lock().unwrap();
+
+        match storage_lock.create_bucket(name) {
+            Ok(_) => Ok(()),
+            Err(StorageError::BucketAlreadyExistsInStorage(bucket_name)) => {
+                Err(S3Error::BucketAlreadyExists(bucket_name))
+            }
+            Err(e) => Err(S3Error::InternalStorageError(format!(
+                "Failed to create bucket in storage: {}",
+                e
+            ))),
         }
-        // Pass the cloned Arc<Mutex<Storage>> to the new Bucket
-        let new_bucket = Bucket::new(name.to_string(), storage.clone());
-        self.buckets.insert(name.to_string(), new_bucket);
-        Ok(())
     }
 
     pub fn delete_bucket(&mut self, name: &str) -> Result<(), S3Error> {
-        if self.buckets.remove(name).is_some() {
-            Ok(())
-        } else {
-            Err(S3Error::BucketNotFound(name.to_string()))
+        let mut storage_lock = self.storage.lock().unwrap();
+
+        match storage_lock._delete_bucket(name) {
+            Ok(_) => Ok(()),
+            Err(StorageError::BucketNotFoundInStorage(bucket_name)) => {
+                // <--- Handle new StorageError variant
+                Err(S3Error::BucketNotFound(bucket_name))
+            }
+            Err(e) => Err(S3Error::InternalStorageError(format!(
+                "Failed to delete bucket from storage: {}",
+                e
+            ))),
         }
     }
 
     pub fn list_buckets(&self) -> Vec<String> {
-        self.buckets.keys().cloned().collect()
+        let storage_lock = self.storage.lock().unwrap();
+        match storage_lock.list_buckets() {
+            Ok(buckets) => buckets,
+            Err(e) => {
+                eprintln!("Error listing buckets from storage: {}", e);
+                Vec::new()
+            }
+        }
     }
 
-    // --- Object Operations (Delegating to Bucket) ---
+    // Helper to get a Bucket instance on demand
+    fn get_bucket_instance(&self, bucket_name: &str) -> Result<Bucket, S3Error> {
+        let storage_lock = self.storage.lock().unwrap();
+        // Use the dedicated bucket_exists method
+        match storage_lock.bucket_exists(bucket_name) {
+            Ok(true) => Ok(Bucket::new(bucket_name.to_string(), self.storage.clone())),
+            Ok(false) => Err(S3Error::BucketNotFound(bucket_name.to_string())),
+            Err(e) => Err(S3Error::InternalStorageError(format!(
+                "Error checking bucket existence: {}",
+                e
+            ))),
+        }
+    }
 
-    // Note: The `put_object` signature in main.rs suggests `S3Service::put_object`
-    // returns `Result<&Object, S3Error>`. This implies the Object is stored *inside*
-    // the Bucket and a reference to it is returned. This can be tricky with `Object` being
-    // a struct that contains `Vec<u8>`. Returning a reference from a `MutexGuard` is possible,
-    // but often it's simpler to return an owned `Object` or a simplified `ObjectInfo` struct
-    // after the operation. I'll make an assumption here that `bucket.get_object`
-    // returns an owned `Object` and then `S3Service::put_object` also returns an owned `Object` (or clone).
-    // If you explicitly need `&Object`, you'd need to manage lifetimes from the MutexGuard more carefully.
-
-    pub fn put_object(
-        &mut self,
-        bucket_name: &str,
-        object: Object, // Takes the full Object as input
-    ) -> Result<Object, S3Error> { // Changed return type to owned Object for simplicity
-        let bucket = self.buckets.get_mut(bucket_name)
-            .ok_or_else(|| S3Error::BucketNotFound(bucket_name.to_string()))?;
-
-        // Delegate to the bucket's put_object
-        bucket.put_object(object.clone())
-              .map_err(S3Error::BucketOperationFailed)?; // Convert BucketError to S3Error
-
-        // After putting, retrieve the object from the bucket to return it
-        bucket.get_object(&object.key).map_err(S3Error::BucketOperationFailed)
+    pub fn put_object(&mut self, bucket_name: &str, object: Object) -> Result<Object, S3Error> {
+        let mut bucket = self.get_bucket_instance(bucket_name)?;
+        bucket
+            .put_object(
+                &object.key,
+                &object.data,
+                object.content_type.as_deref(),
+                object.user_metadata.as_ref(),
+            )
+            .map_err(S3Error::BucketOperationFailed)
     }
 
     pub fn get_object(&self, bucket_name: &str, key: &str) -> Result<Object, S3Error> {
-        let bucket = self.buckets.get(bucket_name)
-            .ok_or_else(|| S3Error::BucketNotFound(bucket_name.to_string()))?;
-        bucket.get_object(key).map_err(S3Error::BucketOperationFailed)
+        let bucket = self.get_bucket_instance(bucket_name)?;
+        bucket
+            .get_object(key)
+            .map_err(S3Error::BucketOperationFailed)
     }
 
     pub fn delete_object(&mut self, bucket_name: &str, key: &str) -> Result<(), S3Error> {
-        let bucket = self.buckets.get_mut(bucket_name)
-            .ok_or_else(|| S3Error::BucketNotFound(bucket_name.to_string()))?;
+        let mut bucket = self.get_bucket_instance(bucket_name)?;
         match bucket.delete_object(key) {
-            Ok(true) => Ok(()), // Object was found and deleted
-            Ok(false) => Err(S3Error::ObjectNotFound(key.to_string(), bucket_name.to_string())),
+            Ok(true) => Ok(()),
+            Ok(false) => Err(S3Error::ObjectNotFound(
+                key.to_string(),
+                bucket_name.to_string(),
+            )),
             Err(e) => Err(S3Error::BucketOperationFailed(e)),
         }
     }
 
     pub fn list_objects(&self, bucket_name: &str) -> Result<Vec<String>, S3Error> {
-        let bucket = self.buckets.get(bucket_name)
-            .ok_or_else(|| S3Error::BucketNotFound(bucket_name.to_string()))?;
-        bucket.list_objects().map_err(S3Error::BucketOperationFailed)
+        let bucket = self.get_bucket_instance(bucket_name)?;
+        bucket
+            .list_objects()
+            .map_err(S3Error::BucketOperationFailed)
     }
 }

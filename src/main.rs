@@ -20,8 +20,6 @@ use std::collections::HashMap;
 use tracing::{error, info};
 use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, fmt};
-use storage::StorageError;
-use crate::bucket::BucketError;
 use crate::object::Object;
 
 // Initialize tracing
@@ -47,22 +45,7 @@ impl ResponseError for S3Error {
 
     fn status_code(&self) -> StatusCode {
         match self {
-            S3Error::BucketAlreadyExists(_) => StatusCode::CONFLICT,
-            S3Error::BucketNotFound(_) => StatusCode::NOT_FOUND,
-            S3Error::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
-            S3Error::ObjectCreationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            S3Error::BucketOperationFailed(err) => match err {
-                BucketError::StorageError(err) => match err {
-                    StorageError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::SystemTimeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::JsonError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::TransactionCommitError => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::InvalidPath(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    StorageError::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
-                },
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            },
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -91,7 +74,7 @@ struct BucketDeletedResponse {
 struct ObjectCreatedResponse<'a> {
     name: String,
     bucket: String,
-    metadata: &'a Object, // Assuming Object can be serialized this way
+    metadata: &'a Object,
     message: String,
 }
 
@@ -109,22 +92,7 @@ struct ObjectListResponse {
 }
 
 #[derive(Serialize)]
-struct BucketNotFoundResponse {
-    message: String,
-    bucket: String,
-}
-
-// #[derive(Serialize)]
-// struct ObjectNotFoundResponse {
-//     name: String,
-//     bucket: String,
-//     message: String,
-// }
-
-#[derive(Serialize)]
-struct ObjectCreateFailedResponse {
-    name: String,
-    bucket: String,
+struct ErrorResponse {
     message: String,
 }
 
@@ -134,14 +102,13 @@ struct ObjectCreateFailedResponse {
 /// Creates a new bucket.
 async fn create_bucket_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
-    storage: web::Data<Arc<Mutex<Storage>>>, // `web::Data` wraps the Arc<Mutex<Storage>>
+    // storage: web::Data<Arc<Mutex<Storage>>>, // REMOVE THIS ARGUMENT - S3Service now manages Storage
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let mut s3 = s3_service.lock().unwrap(); // Acquire mutex lock on S3Service
-
-    // IMPORTANT FIX: Unwrapping web::Data and cloning the inner Arc
-    match s3.create_bucket(&bucket_name, storage.get_ref().clone()) {
+    let mut s3 = s3_service.lock().unwrap();
+    // Call create_bucket without the storage argument
+    match s3.create_bucket(&bucket_name) {
         Ok(_) => {
             info!("Bucket '{}' created.", bucket_name);
             Ok(HttpResponse::Created().json(BucketCreatedResponse {
@@ -151,7 +118,14 @@ async fn create_bucket_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to create bucket");
-            Err(e)
+            match e {
+                S3Error::BucketAlreadyExists(_) => Ok(HttpResponse::Conflict().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -174,7 +148,14 @@ async fn delete_bucket_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to delete bucket");
-            Err(e)
+            match e {
+                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -209,17 +190,17 @@ async fn put_object_handler(
     let content_type = req
         .headers()
         .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok()) // Safer way to get Option<String> from header
+        .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
     let user_metadata = req
         .headers()
         .iter()
         .filter(|(k, _)| k.as_str().starts_with("x-user-meta-"))
-        .filter_map(|(k, v)| { // Use filter_map for cleaner Option handling
+        .filter_map(|(k, v)| {
             v.to_str().ok().map(|val_str| {
                 (
-                    k.as_str().strip_prefix("x-user-meta-").unwrap_or(k.as_str()).to_string(), // Strip prefix for user-facing metadata keys
+                    k.as_str().strip_prefix("x-user-meta-").unwrap_or(k.as_str()).to_string(),
                     val_str.to_string(),
                 )
             })
@@ -232,37 +213,31 @@ async fn put_object_handler(
         bucket_name, object_key
     );
     
-    // Create the Object instance
-    let object_to_put = Object::new(
-        object_key.clone(), // Clone for the Object constructor
-        body.to_vec(),
-        content_type,
-        Some(user_metadata),
-    )?; // Propagate ObjectError as S3Error::ObjectCreationFailed
-
     let mut s3 = s3_service.lock().unwrap();
     
-    // S3Service::put_object now returns an owned Object
     match s3.put_object(
         &bucket_name,
-        object_to_put, // Pass the owned object
+        Object::new(object_key.clone(), body.to_vec(), content_type, Some(user_metadata))?,
     ) {
-        Ok(returned_object) => { // Now receive an owned Object
+        Ok(returned_object) => {
             info!("Object '{}' put into bucket '{}'.", returned_object.key, bucket_name);
             Ok(HttpResponse::Created().json(ObjectCreatedResponse {
                 name: returned_object.key.clone(),
                 bucket: bucket_name,
-                metadata: &returned_object, // Pass a reference to the returned object
+                metadata: &returned_object,
                 message: "Object created successfully".to_string(),
             }))
         }
         Err(e) => {
             error!(error = %e, "Failed to store object");
-            Ok(HttpResponse::InternalServerError().json(ObjectCreateFailedResponse {
-                name: object_key,
-                bucket: bucket_name,
-                message: "Object creation failed".to_string(),
-            }))
+            match e {
+                S3Error::ObjectCreationFailed(_) => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -293,16 +268,18 @@ async fn get_object_handler(
             if let Some(content_type) = &object.content_type {
                 response.insert_header((CONTENT_TYPE, content_type.as_str()));
             }
-            Ok(response.body(object.data)) // Pass the owned Vec<u8> directly
+            Ok(response.body(object.data))
         }
         Err(e) => {
             error!(error = %e, "Failed to retrieve object");
-            Err(e)
-            // Ok(HttpResponse::NotFound().json(ObjectNotFoundResponse {
-            //     name: object_key,
-            //     bucket: bucket_name,
-            //     message: "Object not found".to_string(),
-            // }))
+            match e {
+                S3Error::ObjectNotFound(_, _) => Ok(HttpResponse::NotFound().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -337,7 +314,14 @@ async fn delete_object_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to delete object");
-            Err(e)
+            match e {
+                S3Error::ObjectNotFound(_, _) => Ok(HttpResponse::NotFound().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -364,11 +348,14 @@ async fn list_objects_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to list objects");
-            // Err(e)
-            Ok(HttpResponse::NotFound().json(BucketNotFoundResponse {
-                bucket: bucket_name,
-                message: "Bucket not found".to_string(),
-            }))
+            match e {
+                S3Error::BucketNotFound(_) => Ok(HttpResponse::NotFound().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+                _ => Ok(HttpResponse::InternalServerError().json(ErrorResponse {
+                    message: e.to_string(),
+                })),
+            }
         }
     }
 }
@@ -381,47 +368,43 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting S3-like Storage HTTP API on http://127.0.0.1:8080");
 
-    // Initialize Storage first, as S3Service will depend on it for bucket creation
-    let db_path = "s3_storage.db"; // Use a specific file for the SQLite DB
+    // Initialize Storage first
+    let db_path = "s3_storage.db";
     let storage = match Storage::new(db_path) {
         Ok(s) => Arc::new(Mutex::new(s)),
         Err(e) => {
             error!("Failed to initialize storage: {}", e);
-            // Convert the StorageError to an IoError to fit the main function's return type
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Storage initialization failed: {}", e)));
         }
     };
     
-    // Initialize S3Service
-    let s3_service = Arc::new(Mutex::new(S3Service::new()));
+    // Initialize S3Service by passing it the storage Arc
+    let s3_service = Arc::new(Mutex::new(S3Service::new(storage.clone())));
 
     HttpServer::new(move || {
-        // Create a web::Data instance for storage
-        let storage_data = web::Data::new(storage.clone());
+        // Only provide s3_service_data to the app_data.
+        // Handlers will interact with S3Service, which internally manages Storage.
         let s3_service_data = web::Data::new(s3_service.clone());
         
         App::new()
-            // Add tracing middleware for request logging
             .wrap(TracingLogger::default())
-            // Register application data
-            .app_data(s3_service_data.clone()) // Ensure clones are used for each .app_data call
-            .app_data(storage_data.clone()) 
+            .app_data(s3_service_data.clone())
             .service(
                 web::resource("/buckets/{bucket_name}")
-                    .put(create_bucket_handler) // PUT to create bucket
-                    .delete(delete_bucket_handler), // DELETE to delete bucket
+                    .put(create_bucket_handler) // create_bucket_handler no longer needs 'storage' directly
+                    .delete(delete_bucket_handler),
             )
             .service(
-                web::resource("/buckets").get(list_buckets_handler), // GET to list all buckets
+                web::resource("/buckets").get(list_buckets_handler),
             )
             .service(
                 web::resource("/buckets/{bucket_name}/objects/{object_key}")
-                    .put(put_object_handler) // PUT to put object
-                    .get(get_object_handler) // GET to get object
-                    .delete(delete_object_handler), // DELETE to delete object
+                    .put(put_object_handler)
+                    .get(get_object_handler)
+                    .delete(delete_object_handler),
             )
             .service(
-                web::resource("/buckets/{bucket_name}/objects").get(list_objects_handler), // GET to list objects in a bucket
+                web::resource("/buckets/{bucket_name}/objects").get(list_objects_handler),
             )
             .default_service(web::to(|| async { HttpResponse::NotFound().finish() }))
     })
