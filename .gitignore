@@ -56,3 +56,6 @@ target/
 
 # SQLite database file
 *.db
+
+# Data directory
+/data

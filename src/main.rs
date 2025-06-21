@@ -20,7 +20,8 @@ use std::collections::HashMap;
 use tracing::{error, info};
 use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, fmt};
-
+use storage::StorageError;
+use crate::bucket::BucketError;
 use crate::object::Object;
 
 // Initialize tracing
@@ -40,8 +41,8 @@ fn init_logging() {
 impl ResponseError for S3Error {
     fn error_response(&self) -> HttpResponse {
         HttpResponse::build(self.status_code())
-            .insert_header(actix_web::http::header::ContentType::plaintext())
-            .body(self.to_string())
+            .insert_header(actix_web::http::header::ContentType::json())
+            .json(self.to_string())
     }
 
     fn status_code(&self) -> StatusCode {
@@ -49,10 +50,19 @@ impl ResponseError for S3Error {
             S3Error::BucketAlreadyExists(_) => StatusCode::CONFLICT,
             S3Error::BucketNotFound(_) => StatusCode::NOT_FOUND,
             S3Error::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
-            S3Error::InvalidOperation(_) => StatusCode::BAD_REQUEST,
-            // Changed these to INTERNAL_SERVER_ERROR as they indicate internal issues
             S3Error::ObjectCreationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            S3Error::BucketError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            S3Error::BucketOperationFailed(err) => match err {
+                BucketError::StorageError(err) => match err {
+                    StorageError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::SystemTimeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::JsonError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::TransactionCommitError => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::InvalidPath(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    StorageError::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
+                },
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            },
         }
     }
 }
@@ -96,6 +106,26 @@ struct ObjectDeletedResponse {
 struct ObjectListResponse {
     bucket: String,
     items: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct BucketNotFoundResponse {
+    message: String,
+    bucket: String,
+}
+
+// #[derive(Serialize)]
+// struct ObjectNotFoundResponse {
+//     name: String,
+//     bucket: String,
+//     message: String,
+// }
+
+#[derive(Serialize)]
+struct ObjectCreateFailedResponse {
+    name: String,
+    bucket: String,
+    message: String,
 }
 
 // --- Handler Functions for API Endpoints ---
@@ -228,7 +258,11 @@ async fn put_object_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to store object");
-            Err(e)
+            Ok(HttpResponse::InternalServerError().json(ObjectCreateFailedResponse {
+                name: object_key,
+                bucket: bucket_name,
+                message: "Object creation failed".to_string(),
+            }))
         }
     }
 }
@@ -264,6 +298,11 @@ async fn get_object_handler(
         Err(e) => {
             error!(error = %e, "Failed to retrieve object");
             Err(e)
+            // Ok(HttpResponse::NotFound().json(ObjectNotFoundResponse {
+            //     name: object_key,
+            //     bucket: bucket_name,
+            //     message: "Object not found".to_string(),
+            // }))
         }
     }
 }
@@ -325,7 +364,11 @@ async fn list_objects_handler(
         }
         Err(e) => {
             error!(error = %e, "Failed to list objects");
-            Err(e)
+            // Err(e)
+            Ok(HttpResponse::NotFound().json(BucketNotFoundResponse {
+                bucket: bucket_name,
+                message: "Bucket not found".to_string(),
+            }))
         }
     }
 }

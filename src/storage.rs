@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::time::SystemTime;
 use serde_json;
+use serde::Serialize;
 use md5::{Digest, Md5};
 use hex;
 use thiserror::Error;
@@ -22,15 +23,19 @@ fn calculate_etag(data: &[u8]) -> String {
 }
 
 /// Custom error type for operations within the storage module.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize)]
 pub enum StorageError {
     #[error("Database error: {0}")]
+    #[serde(skip_serializing)]
     DatabaseError(#[from] rusqlite::Error),
     #[error("I/O error: {0}")]
+    #[serde(skip_serializing)]
     IoError(#[from] std::io::Error),
     #[error("System time error: {0}")]
+    #[serde(skip_serializing)]
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("JSON serialization/deserialization error: {0}")]
+    #[serde(skip_serializing)]
     JsonError(#[from] serde_json::Error),
     #[error("Transaction failed to commit")]
     TransactionCommitError,

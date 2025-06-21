@@ -28,9 +28,10 @@ pub struct Object {
 }
 
 /// Custom error type for operations within the object module.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize)]
 pub enum ObjectError {
     #[error("Failed to get system time: {0}")]
+    #[serde(skip_serializing)]
     SystemTime(#[from] SystemTimeError),
 }
 

@@ -3,18 +3,20 @@
 // Each bucket manages its own collection of objects by interacting with the Storage layer.
 
 use crate::object::{Object, ObjectError}; // Import Object and ObjectError
-use crate::Storage; // This line should work!
+use crate::{Storage};
+use crate::storage::StorageError;
 use std::sync::{Arc, Mutex};
+use serde::Serialize;
 use thiserror::Error; // Add this for potential BucketError later, or for StorageError::from
 /// Custom error type for operations within the bucket module.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize)]
 pub enum BucketError {
     #[error("Object creation failed: {0}")]
     ObjectCreationError(#[from] ObjectError), // If you create objects inside Bucket methods
     #[error("Failed to acquire storage lock")]
     LockAcquisitionFailed, // For the unwrap() on mutex.lock()
     #[error("Storage error: {0}")]
-    StorageError(String),
+    StorageError(#[from] StorageError),
 }
 
 
@@ -104,7 +106,7 @@ impl Bucket {
             .storage
             .lock()
             .map_err(|_| BucketError::LockAcquisitionFailed)?;
-        let _ = storage_guard.put_object(&self.name, object).map_err(|e| BucketError::StorageError(e.to_string()));
+        let _ = storage_guard.put_object(&self.name, object).map_err(|e| BucketError::StorageError(e));
         Ok(())
     }
 
@@ -140,7 +142,7 @@ impl Bucket {
         let object = storage_guard.get_object(&self.name, key);
         match object {
             Ok(object) => Ok(object),
-            Err(e) => Err(BucketError::StorageError(e.to_string())),
+            Err(e) => Err(BucketError::StorageError(e)),
         }
     }
 
@@ -153,7 +155,7 @@ impl Bucket {
             .map_err(|_| BucketError::LockAcquisitionFailed)?;
         match storage_guard.delete_object(&self.name, key) {
             Ok(result) => Ok(result),
-            Err(e) => Err(BucketError::StorageError(e.to_string())),
+            Err(e) => Err(BucketError::StorageError(e)),
         }
     }
 
@@ -165,7 +167,7 @@ impl Bucket {
             .map_err(|_| BucketError::LockAcquisitionFailed)?;
         match storage_guard.list_objects(&self.name) {
             Ok(result) => Ok(result),
-            Err(e) => Err(BucketError::StorageError(e.to_string())),
+            Err(e) => Err(BucketError::StorageError(e)),
         }
     }
 
@@ -195,6 +197,6 @@ impl Bucket {
             .map_err(|_| BucketError::LockAcquisitionFailed)?;
         storage_guard
             .is_empty(&self.name)
-            .map_err(|e| BucketError::StorageError(e.to_string()))
+            .map_err(|e| BucketError::StorageError(e))
     }
 }
