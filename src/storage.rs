@@ -1,12 +1,12 @@
 // storage.rs
-use rusqlite::{params, Connection, OptionalExtension};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::time::SystemTime;
-use serde_json;
-use md5::{Digest, Md5};
 use hex;
+use md5::{Digest, Md5};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use thiserror::Error;
 
 use crate::object::Object;
@@ -41,7 +41,8 @@ pub enum StorageError {
     ObjectNotFound(String, String),
     #[error("Bucket '{0}' already exists in storage")]
     BucketAlreadyExistsInStorage(String),
-    #[error("Bucket '{0}' not found in storage")] // <--- NEW: Specific error for bucket not found in storage
+    #[error("Bucket '{0}' not found in storage")]
+    // <--- NEW: Specific error for bucket not found in storage
     BucketNotFoundInStorage(String),
 }
 
@@ -81,42 +82,41 @@ impl Storage {
 
     pub fn create_bucket(&mut self, bucket_name: &str) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
-        match tx.execute(
-            "INSERT INTO buckets (name) VALUES (?1)",
-            [bucket_name],
-        ) {
+        match tx.execute("INSERT INTO buckets (name) VALUES (?1)", [bucket_name]) {
             Ok(_) => {
                 tx.commit().map_err(|e| StorageError::DatabaseError(e))?;
                 Ok(())
-            },
-            Err(rusqlite::Error::SqliteFailure(e, Some(msg))) if e.code == rusqlite::ErrorCode::ConstraintViolation && msg.contains("UNIQUE constraint failed: buckets.name") => {
+            }
+            Err(rusqlite::Error::SqliteFailure(e, Some(msg)))
+                if e.code == rusqlite::ErrorCode::ConstraintViolation
+                    && msg.contains("UNIQUE constraint failed: buckets.name") =>
+            {
                 tx.rollback().map_err(|e| StorageError::DatabaseError(e))?;
-                Err(StorageError::BucketAlreadyExistsInStorage(bucket_name.to_string()))
-            },
+                Err(StorageError::BucketAlreadyExistsInStorage(
+                    bucket_name.to_string(),
+                ))
+            }
             Err(e) => {
-                tx.rollback().map_err(|err| StorageError::DatabaseError(err))?;
+                tx.rollback()
+                    .map_err(|err| StorageError::DatabaseError(err))?;
                 Err(StorageError::DatabaseError(e))
-            },
+            }
         }
     }
 
     pub fn _delete_bucket(&mut self, bucket: &str) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
-        let rows_affected = tx.execute(
-            "DELETE FROM buckets WHERE name = ?1",
-            [bucket],
-        )?;
+        let rows_affected = tx.execute("DELETE FROM buckets WHERE name = ?1", [bucket])?;
         if rows_affected == 0 {
             tx.rollback().map_err(|e| StorageError::DatabaseError(e))?;
             return Err(StorageError::BucketNotFoundInStorage(bucket.to_string()));
         }
-        tx.commit().map_err(|_| StorageError::TransactionCommitError)
+        tx.commit()
+            .map_err(|_| StorageError::TransactionCommitError)
     }
 
     pub fn list_buckets(&self) -> Result<Vec<String>, StorageError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT name FROM buckets",
-        )?;
+        let mut stmt = self.conn.prepare("SELECT name FROM buckets")?;
         let mut rows = stmt.query([])?;
         let mut bucket_names = Vec::new();
         while let Some(row) = rows.next()? {
@@ -127,31 +127,25 @@ impl Storage {
 
     // <--- NEW: Method to check if a bucket exists directly
     pub fn bucket_exists(&self, bucket_name: &str) -> Result<bool, StorageError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT 1 FROM buckets WHERE name = ?1",
-        )?;
-        let exists: Option<i64> = stmt.query_row(params![bucket_name], |row| row.get(0)).optional()?;
+        let mut stmt = self.conn.prepare("SELECT 1 FROM buckets WHERE name = ?1")?;
+        let exists: Option<i64> = stmt
+            .query_row(params![bucket_name], |row| row.get(0))
+            .optional()?;
         Ok(exists.is_some())
     }
 
-    pub fn put_object(
-        &mut self,
-        bucket: &str,
-        object: Object,
-    ) -> Result<(), StorageError> {
+    pub fn put_object(&mut self, bucket: &str, object: Object) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
 
-        tx.execute(
-            "INSERT OR IGNORE INTO buckets (name) VALUES (?1)",
-            [bucket],
-        )?;
+        tx.execute("INSERT OR IGNORE INTO buckets (name) VALUES (?1)", [bucket])?;
 
         let bucket_dir = self.base_path.join("buckets").join(bucket);
         fs::create_dir_all(&bucket_dir)?;
 
         let file_path = bucket_dir.join(&object.key);
 
-        let file_path_str = file_path.to_str()
+        let file_path_str = file_path
+            .to_str()
             .ok_or_else(|| StorageError::InvalidPath(file_path.display().to_string()))?
             .to_string();
 
@@ -185,7 +179,8 @@ impl Storage {
             ],
         )?;
 
-        tx.commit().map_err(|_| StorageError::TransactionCommitError)?;
+        tx.commit()
+            .map_err(|_| StorageError::TransactionCommitError)?;
         Ok(())
     }
 
@@ -221,16 +216,22 @@ impl Storage {
                 user_metadata,
             })
         } else {
-            Err(StorageError::ObjectNotFound(key.to_string(), bucket.to_string()))
+            Err(StorageError::ObjectNotFound(
+                key.to_string(),
+                bucket.to_string(),
+            ))
         }
     }
 
     pub fn delete_object(&mut self, bucket: &str, key: &str) -> Result<bool, StorageError> {
-        let file_path_to_delete_option: Option<String> = self.conn.query_row(
-            "SELECT file_path FROM objects WHERE bucket_name = ?1 AND key = ?2",
-            params![bucket, key],
-            |row| row.get(0),
-        ).optional()?;
+        let file_path_to_delete_option: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT file_path FROM objects WHERE bucket_name = ?1 AND key = ?2",
+                params![bucket, key],
+                |row| row.get(0),
+            )
+            .optional()?;
 
         let tx = self.conn.transaction()?;
 
@@ -246,18 +247,22 @@ impl Storage {
                     fs::remove_file(&file_path)?;
                 }
             }
-            tx.commit().map_err(|_| StorageError::TransactionCommitError)?;
+            tx.commit()
+                .map_err(|_| StorageError::TransactionCommitError)?;
             Ok(true)
         } else {
             tx.rollback()?;
-            Err(StorageError::ObjectNotFound(key.to_string(), bucket.to_string()))
+            Err(StorageError::ObjectNotFound(
+                key.to_string(),
+                bucket.to_string(),
+            ))
         }
     }
 
     pub fn list_objects(&self, bucket: &str) -> Result<Vec<String>, StorageError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT key FROM objects WHERE bucket_name = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key FROM objects WHERE bucket_name = ?1")?;
         let mut rows = stmt.query(params![bucket])?;
         let mut object_keys = Vec::new();
         while let Some(row) = rows.next()? {
@@ -267,9 +272,9 @@ impl Storage {
     }
 
     pub fn _is_empty(&self, bucket: &str) -> Result<bool, StorageError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT COUNT(*) FROM objects WHERE bucket_name = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT COUNT(*) FROM objects WHERE bucket_name = ?1")?;
         let count: i64 = stmt.query_row(params![bucket], |row| row.get(0))?;
         Ok(count == 0)
     }
