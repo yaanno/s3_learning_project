@@ -41,7 +41,7 @@ impl S3Service {
     ///
     /// * `Result<(), S3Error>` - An empty result, or an error.
     pub fn create_bucket(&mut self, name: &str) -> Result<(), S3Error> {
-        let mut storage_lock = self.storage.lock().unwrap();
+        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
 
         let result = storage_lock.create_bucket(name);
         drop(storage_lock);
@@ -68,7 +68,7 @@ impl S3Service {
     ///
     /// * `Result<(), S3Error>` - An empty result, or an error.
     pub fn delete_bucket(&mut self, name: &str) -> Result<(), S3Error> {
-        let mut storage_lock = self.storage.lock().unwrap();
+        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
 
         let result = storage_lock._delete_bucket(name);
         drop(storage_lock);
@@ -91,7 +91,7 @@ impl S3Service {
     ///
     /// * `Vec<String>` - A vector of bucket names.
     pub fn list_buckets(&self) -> Vec<String> {
-        let storage_lock = self.storage.lock().unwrap();
+        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         let result = storage_lock.list_buckets();
         drop(storage_lock);
         match result {
@@ -105,7 +105,7 @@ impl S3Service {
 
     /// Helper to get a Bucket instance on demand
     fn get_bucket_instance(&self, bucket_name: &str) -> Result<Bucket, S3Error> {
-        let storage_lock = self.storage.lock().unwrap();
+        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         let result = storage_lock.bucket_exists(bucket_name);
         drop(storage_lock);
         match result {

@@ -66,7 +66,7 @@ impl Bucket {
             user_metadata.cloned(),
         )?; // Converts ObjectError into BucketError::ObjectDataError
 
-        let mut storage_lock = self.storage.lock().unwrap();
+        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         // Delegate the actual storage persistence to the Storage module
         storage_lock.put_object(&self.name, object_to_store)?; // Converts StorageError into BucketError::Storage
 
@@ -88,7 +88,7 @@ impl Bucket {
     ///
     /// * `Result<Object, BucketError>` - The object that was retrieved, or an error.
     pub fn get_object(&self, key: &str) -> Result<Object, BucketError> {
-        let storage_lock = self.storage.lock().unwrap();
+        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         let object = storage_lock.get_object(&self.name, key)?;
         drop(storage_lock);
         Ok(object)
@@ -104,7 +104,7 @@ impl Bucket {
     ///
     /// * `Result<bool, BucketError>` - Whether the object was deleted, or an error.
     pub fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
-        let mut storage_lock = self.storage.lock().unwrap();
+        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         let result = storage_lock.delete_object(&self.name, key)?;
         drop(storage_lock);
         Ok(result)
@@ -116,7 +116,7 @@ impl Bucket {
     ///
     /// * `Result<Vec<String>, BucketError>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self) -> Result<Vec<String>, BucketError> {
-        let storage_lock = self.storage.lock().unwrap();
+        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
         let result = storage_lock.list_objects(&self.name)?;
         drop(storage_lock);
         Ok(result)

@@ -39,7 +39,9 @@ pub async fn get_object_handler(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
-    let s3 = s3_service.lock().unwrap();
+    let s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     match s3.get_object(&bucket_name, &object_key) {
         Ok(object) => {
             info!(
@@ -76,7 +78,9 @@ pub async fn create_bucket_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let mut s3 = s3_service.lock().unwrap();
+    let mut s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     // Call create_bucket without the storage argument
     match s3.create_bucket(&bucket_name) {
         Ok(_) => {
@@ -109,7 +113,9 @@ pub async fn delete_bucket_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let mut s3 = s3_service.lock().unwrap();
+    let mut s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     match s3.delete_bucket(&bucket_name) {
         Ok(_) => {
             info!("Bucket '{}' deleted.", bucket_name);
@@ -138,7 +144,9 @@ pub async fn delete_bucket_handler(
 pub async fn list_buckets_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
 ) -> Result<HttpResponse, S3Error> {
-    let s3 = s3_service.lock().unwrap();
+    let s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     let buckets = s3.list_buckets();
     Ok(HttpResponse::Ok().json(ListResponse { items: buckets }))
 }
@@ -260,7 +268,9 @@ pub async fn delete_object_handler(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
-    let mut s3 = s3_service.lock().unwrap();
+    let mut s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     match s3.delete_object(&bucket_name, &object_key) {
         Ok(_) => {
             info!(
@@ -296,7 +306,9 @@ pub async fn list_objects_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let s3 = s3_service.lock().unwrap();
+    let s3 = s3_service
+        .lock()
+        .expect("Acquire lock on S3 service failed");
     match s3.list_objects(&bucket_name) {
         Ok(objects) => {
             info!(
