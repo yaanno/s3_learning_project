@@ -88,10 +88,11 @@ impl Bucket {
     ///
     /// * `Result<Object, BucketError>` - The object that was retrieved, or an error.
     pub fn get_object(&self, key: &str) -> Result<Object, BucketError> {
-        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
-        let object = storage_lock.get_object(&self.name, key)?;
-        drop(storage_lock);
-        Ok(object)
+        let object = {
+            let lock = self.storage.lock().expect("Acquire lock on storage failed");
+            lock.get_object(&self.name, key)
+        };
+        Ok(object?)
     }
 
     /// Deletes an object from the bucket.
@@ -104,10 +105,11 @@ impl Bucket {
     ///
     /// * `Result<bool, BucketError>` - Whether the object was deleted, or an error.
     pub fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
-        let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
-        let result = storage_lock.delete_object(&self.name, key)?;
-        drop(storage_lock);
-        Ok(result)
+        let object = {
+            let mut lock = self.storage.lock().expect("Acquire lock on storage failed");
+            lock.delete_object(&self.name, key)
+        };
+        Ok(object?)
     }
 
     /// Lists all objects in the bucket.
@@ -116,9 +118,10 @@ impl Bucket {
     ///
     /// * `Result<Vec<String>, BucketError>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self) -> Result<Vec<String>, BucketError> {
-        let storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
-        let result = storage_lock.list_objects(&self.name)?;
-        drop(storage_lock);
-        Ok(result)
+        let object = {
+            let lock = self.storage.lock().expect("Acquire lock on storage failed");
+            lock.list_objects(&self.name)
+        };
+        Ok(object?)
     }
 }
