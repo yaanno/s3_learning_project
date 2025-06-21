@@ -23,7 +23,16 @@ pub struct Bucket {
 }
 
 impl Bucket {
-    // `Bucket::new` now takes the Arc<Mutex<Storage>>
+    /// Creates a new bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the bucket to create.
+    /// * `storage` - The storage to use for the bucket.
+    ///
+    /// # Returns
+    ///
+    /// * `Bucket` - The created bucket.
     pub fn new(name: String, storage: Arc<Mutex<Storage>>) -> Self {
         Bucket {
             name,
@@ -31,6 +40,18 @@ impl Bucket {
         }
     }
 
+    /// Puts an object into the bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key of the object to put.
+    /// * `data` - The data of the object to put.
+    /// * `content_type` - The content type of the object to put.
+    /// * `user_metadata` - The user metadata of the object to put.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Object, BucketError>` - The object that was put, or an error.
     pub fn put_object(
         &mut self,
         key: &str,
@@ -56,6 +77,15 @@ impl Bucket {
         self.get_object(key) // This handles the ObjectNotFound and Storage errors
     }
 
+    /// Gets an object from the bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key of the object to get.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Object, BucketError>` - The object that was retrieved, or an error.
     pub fn get_object(&self, key: &str) -> Result<Object, BucketError> {
         let storage_lock = self.storage.lock().unwrap();
         storage_lock
@@ -66,6 +96,15 @@ impl Bucket {
             })
     }
 
+    /// Deletes an object from the bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key of the object to delete.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, BucketError>` - Whether the object was deleted, or an error.
     pub fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
         let mut storage_lock = self.storage.lock().unwrap();
         storage_lock
@@ -73,6 +112,11 @@ impl Bucket {
             .map_err(BucketError::Storage) // Convert any StorageError
     }
 
+    /// Lists all objects in the bucket.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>, BucketError>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self) -> Result<Vec<String>, BucketError> {
         let storage_lock = self.storage.lock().unwrap();
         storage_lock

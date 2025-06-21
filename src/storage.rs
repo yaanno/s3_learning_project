@@ -80,6 +80,15 @@ impl Storage {
         Ok(Self { conn, base_path })
     }
 
+    /// Creates a new bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket_name` - The name of the bucket to create.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), StorageError>` - An empty result, or an error.
     pub fn create_bucket(&mut self, bucket_name: &str) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
         match tx.execute("INSERT INTO buckets (name) VALUES (?1)", [bucket_name]) {
@@ -115,6 +124,11 @@ impl Storage {
             .map_err(|_| StorageError::TransactionCommitError)
     }
 
+    /// Lists all buckets.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>, StorageError>` - A vector of bucket names, or an error.
     pub fn list_buckets(&self) -> Result<Vec<String>, StorageError> {
         let mut stmt = self.conn.prepare("SELECT name FROM buckets")?;
         let mut rows = stmt.query([])?;
@@ -125,7 +139,15 @@ impl Storage {
         Ok(bucket_names)
     }
 
-    // <--- NEW: Method to check if a bucket exists directly
+    /// Checks if a bucket exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket_name` - The name of the bucket to check.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, StorageError>` - A boolean indicating whether the bucket exists, or an error.
     pub fn bucket_exists(&self, bucket_name: &str) -> Result<bool, StorageError> {
         let mut stmt = self.conn.prepare("SELECT 1 FROM buckets WHERE name = ?1")?;
         let exists: Option<i64> = stmt
@@ -134,6 +156,16 @@ impl Storage {
         Ok(exists.is_some())
     }
 
+    /// Puts an object into a bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to put the object into.
+    /// * `object` - The object to put into the bucket.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), StorageError>` - An empty result, or an error.
     pub fn put_object(&mut self, bucket: &str, object: Object) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
 
@@ -184,6 +216,16 @@ impl Storage {
         Ok(())
     }
 
+    /// Gets an object from a bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to get the object from.
+    /// * `key` - The key of the object to get.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Object, StorageError>` - The retrieved object, or an error.
     pub fn get_object(&self, bucket: &str, key: &str) -> Result<Object, StorageError> {
         let mut stmt = self.conn.prepare(
             "SELECT file_path, content_type, etag, last_modified, metadata
@@ -223,6 +265,16 @@ impl Storage {
         }
     }
 
+    /// Deletes an object from a bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to delete the object from.
+    /// * `key` - The key of the object to delete.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, StorageError>` - A boolean indicating whether the object was deleted, or an error.
     pub fn delete_object(&mut self, bucket: &str, key: &str) -> Result<bool, StorageError> {
         let file_path_to_delete_option: Option<String> = self
             .conn
@@ -259,6 +311,15 @@ impl Storage {
         }
     }
 
+    /// Lists all objects in a bucket.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to list objects from.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>, StorageError>` - A vector of object keys in the bucket, or an error.
     pub fn list_objects(&self, bucket: &str) -> Result<Vec<String>, StorageError> {
         let mut stmt = self
             .conn
@@ -271,6 +332,15 @@ impl Storage {
         Ok(object_keys)
     }
 
+    /// Checks if a bucket is empty.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to check.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, StorageError>` - A boolean indicating whether the bucket is empty, or an error.
     pub fn _is_empty(&self, bucket: &str) -> Result<bool, StorageError> {
         let mut stmt = self
             .conn

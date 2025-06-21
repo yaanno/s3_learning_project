@@ -48,6 +48,8 @@ impl Object {
     ///
     /// * `key` - The unique identifier for the object within its bucket.
     /// * `data` - The binary data of the object.
+    /// * `content_type` - The MIME type of the object.
+    /// * `user_metadata` - Optional user metadata for the object.
     ///
     /// # Returns
     ///
@@ -90,7 +92,7 @@ impl Object {
     /// ```
     /// use s3_learning_project::object::Object;
     /// let object = Object::new("my-object-key".to_string(), vec![1, 2, 3], None, None);
-    /// assert_eq!(object.size(), 3);
+    /// assert_eq!(object.unwrap().size(), 3);
     /// ```
     #[allow(dead_code)]
     pub fn size(&self) -> usize {

@@ -17,6 +17,15 @@ use crate::structs::{
 
 /// Handles GET /buckets/{bucket_name}/objects/{object_key}
 /// Retrieves an object from a bucket.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the object to retrieve.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 #[tracing::instrument(
     name = "Get object",
     skip(s3_service),
@@ -62,6 +71,15 @@ pub async fn get_object_handler(
 
 /// Handles PUT /buckets/{bucket_name}
 /// Creates a new bucket.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the bucket to create.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 pub async fn create_bucket_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     // storage: web::Data<Arc<Mutex<Storage>>>, // REMOVE THIS ARGUMENT - S3Service now manages Storage
@@ -96,6 +114,15 @@ pub async fn create_bucket_handler(
 
 /// Handles DELETE /buckets/{bucket_name}
 /// Deletes an existing bucket.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the bucket to delete.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 pub async fn delete_bucket_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     path: web::Path<String>,
@@ -126,6 +153,14 @@ pub async fn delete_bucket_handler(
 
 /// Handles GET /buckets
 /// Lists all existing buckets.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 pub async fn list_buckets_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
 ) -> Result<HttpResponse, S3Error> {
@@ -136,6 +171,17 @@ pub async fn list_buckets_handler(
 
 /// Handles PUT /buckets/{bucket_name}/objects/{object_key}
 /// Puts an object into a bucket. The object data is taken from the request body.
+///
+/// # Arguments
+///
+/// * `req` - The HTTP request.
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the object to put.
+/// * `body` - The body of the request.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 #[tracing::instrument(
     name = "Put object",
     skip(s3_service, body, req),
@@ -221,6 +267,15 @@ pub async fn put_object_handler(
 
 /// Handles DELETE /buckets/{bucket_name}/objects/{object_key}
 /// Deletes an object from a bucket.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the object to delete.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 #[tracing::instrument(
     name = "Delete object",
     skip(s3_service),
@@ -263,6 +318,15 @@ pub async fn delete_object_handler(
 
 /// Handles GET /buckets/{bucket_name}/objects
 /// Lists all objects in a specific bucket.
+///
+/// # Arguments
+///
+/// * `s3_service` - A reference to the S3Service instance.
+/// * `path` - The path to the bucket to list objects from.
+///
+/// # Returns
+///
+/// * `Result<HttpResponse, S3Error>` - The HTTP response, or an error.
 pub async fn list_objects_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
     path: web::Path<String>,
