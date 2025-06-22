@@ -24,13 +24,13 @@ impl ConsistencyChecker {
     /// Start the background consistency checker
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         // let storage = self.storage.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = time::interval(self.check_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 match self.run_check().await {
                     Ok(_) => info!("Consistency check completed successfully"),
                     Err(e) => error!("Consistency check failed: {}", e),
@@ -38,7 +38,7 @@ impl ConsistencyChecker {
             }
         })
     }
-    
+
     /// Run a single consistency check
     async fn run_check(&self) -> Result<(), StorageError> {
         let mut storage = self.storage.lock().await;
@@ -50,7 +50,7 @@ impl ConsistencyChecker {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn test_consistency_checker() {
@@ -58,20 +58,21 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         let db_path_str = db_path.to_str().unwrap();
-        
+
         // Create storage and checker
         let storage = Storage::new(db_path_str).unwrap();
-        let checker = ConsistencyChecker::new(Arc::new(Mutex::new(storage)), Duration::from_millis(100));
-        
+        let checker =
+            ConsistencyChecker::new(Arc::new(Mutex::new(storage)), Duration::from_millis(100));
+
         // Start the checker
         let handle = checker.start();
-        
+
         // Let it run for a short time
         sleep(Duration::from_millis(300)).await;
-        
+
         // Cancel the task
         handle.abort();
-        
+
         // Verify no panic occurred
         assert!(handle.await.unwrap_err().is_cancelled());
     }

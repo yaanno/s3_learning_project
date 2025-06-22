@@ -1,13 +1,13 @@
 // main.rs
 // This file now sets up an HTTP server to expose the S3-like service.
 
+mod background;
 mod bucket; // Declare the bucket module
 mod handlers;
 mod object;
 mod s3_service; // Declare the s3_service module
 mod storage;
 mod structs;
-mod background;
 
 use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
@@ -18,13 +18,13 @@ use handlers::{
     list_buckets_handler, list_objects_handler, put_object_handler,
 };
 use s3_service::{S3Error, S3Service};
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::time::Duration;
 use storage::Storage;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, fmt};
-use tokio::sync::Mutex;
 
 // Import the ConsistencyChecker
 use crate::background::ConsistencyChecker;
@@ -93,7 +93,8 @@ async fn main() -> std::io::Result<()> {
     let _checker_handle = ConsistencyChecker::new(
         storage_for_checker,
         Duration::from_secs(3600), // Run every hour
-    ).start();
+    )
+    .start();
 
     info!("Started background consistency checker");
 

@@ -4,9 +4,9 @@ use actix_web::http::header::CONTENT_TYPE;
 use actix_web::web;
 use actix_web::web::Bytes;
 use std::collections::HashMap;
-use std::sync::{Arc};
-use tracing::{error, info};
+use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 use crate::S3Error;
 use crate::S3Service;
@@ -35,9 +35,7 @@ pub async fn create_bucket_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let mut s3 = s3_service
-        .lock()
-        .await;
+    let mut s3 = s3_service.lock().await;
     // Call create_bucket without the storage argument
     match s3.create_bucket(&bucket_name).await {
         Ok(_) => {
@@ -70,9 +68,7 @@ pub async fn delete_bucket_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, S3Error> {
     let bucket_name = path.into_inner();
-    let mut s3 = s3_service
-        .lock()
-        .await;
+    let mut s3 = s3_service.lock().await;
     match s3.delete_bucket(&bucket_name).await {
         Ok(_) => {
             info!("Bucket '{}' deleted.", bucket_name);
@@ -102,9 +98,7 @@ pub async fn list_buckets_handler(
     s3_service: web::Data<Arc<Mutex<S3Service>>>,
 ) -> Result<HttpResponse, S3Error> {
     let result = {
-        let s3 = s3_service
-            .lock()
-            .await;
+        let s3 = s3_service.lock().await;
         s3.list_buckets().await
     };
     match result {
@@ -140,9 +134,7 @@ pub async fn get_object_handler(
 ) -> Result<HttpResponse, S3Error> {
     let (bucket_name, object_key) = path.into_inner();
     let result = {
-        let s3 = s3_service
-            .lock()
-            .await;
+        let s3 = s3_service.lock().await;
         s3.get_object(&bucket_name, &object_key).await
     };
     match result {

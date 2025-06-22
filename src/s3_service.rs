@@ -2,7 +2,7 @@
 use crate::bucket::{Bucket, BucketError};
 use crate::object::{Object, ObjectError};
 use crate::storage::{Storage, StorageError};
-use std::sync::{Arc};
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -134,7 +134,11 @@ impl S3Service {
     /// # Returns
     ///
     /// * `Result<Object, S3Error>` - The put object, or an error.
-    pub async fn put_object(&mut self, bucket_name: &str, object: Object) -> Result<Object, S3Error> {
+    pub async fn put_object(
+        &mut self,
+        bucket_name: &str,
+        object: Object,
+    ) -> Result<Object, S3Error> {
         let mut bucket = self.get_bucket_instance(bucket_name).await?;
         let result = bucket.put_object(
             &object.key,

@@ -2,7 +2,7 @@
 use crate::object::{Object, ObjectError}; // Ensure Object and ObjectError are accessible
 use crate::storage::{Storage, StorageError}; // Import Storage and StorageError
 use std::collections::HashMap;
-use std::sync::{Arc};
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
