@@ -2,8 +2,9 @@
 use crate::object::{Object, ObjectError}; // Ensure Object and ObjectError are accessible
 use crate::storage::{Storage, StorageError}; // Import Storage and StorageError
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Error)]
 pub enum BucketError {
@@ -50,7 +51,7 @@ impl Bucket {
     /// # Returns
     ///
     /// * `Result<Object, BucketError>` - The object that was put, or an error.
-    pub fn put_object(
+    pub async fn put_object(
         &mut self,
         key: &str,
         data: &[u8],
@@ -67,13 +68,13 @@ impl Bucket {
         )?; // Converts ObjectError into BucketError::ObjectDataError
 
         let result = {
-            let mut storage_lock = self.storage.lock().expect("Acquire lock on storage failed");
+            let mut storage_lock = self.storage.lock().await;
             storage_lock.put_object(&self.name, object_to_store)
         };
 
         match result {
             Ok(_) => {
-                if let Ok(object) = self.get_object(key) {
+                if let Ok(object) = self.get_object(key).await {
                     Ok(object)
                 } else {
                     Err(BucketError::Storage(StorageError::ObjectNotFound(
@@ -95,9 +96,9 @@ impl Bucket {
     /// # Returns
     ///
     /// * `Result<Object, BucketError>` - The object that was retrieved, or an error.
-    pub fn get_object(&self, key: &str) -> Result<Object, BucketError> {
+    pub async fn get_object(&self, key: &str) -> Result<Object, BucketError> {
         let object = {
-            let lock = self.storage.lock().expect("Acquire lock on storage failed");
+            let lock = self.storage.lock().await;
             lock.get_object(&self.name, key)
         };
         Ok(object?)
@@ -112,9 +113,9 @@ impl Bucket {
     /// # Returns
     ///
     /// * `Result<bool, BucketError>` - Whether the object was deleted, or an error.
-    pub fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
+    pub async fn delete_object(&mut self, key: &str) -> Result<bool, BucketError> {
         let object = {
-            let mut lock = self.storage.lock().expect("Acquire lock on storage failed");
+            let mut lock = self.storage.lock().await;
             lock.delete_object(&self.name, key)
         };
         Ok(object?)
@@ -125,9 +126,9 @@ impl Bucket {
     /// # Returns
     ///
     /// * `Result<Vec<String>, BucketError>` - A vector of object keys in the bucket, or an error.
-    pub fn list_objects(&self) -> Result<Vec<String>, BucketError> {
+    pub async fn list_objects(&self) -> Result<Vec<String>, BucketError> {
         let object = {
-            let lock = self.storage.lock().expect("Acquire lock on storage failed");
+            let lock = self.storage.lock().await;
             lock.list_objects(&self.name)
         };
         Ok(object?)

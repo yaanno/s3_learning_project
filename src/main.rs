@@ -7,6 +7,7 @@ mod object;
 mod s3_service; // Declare the s3_service module
 mod storage;
 mod structs;
+mod background;
 
 use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
@@ -17,11 +18,16 @@ use handlers::{
     list_buckets_handler, list_objects_handler, put_object_handler,
 };
 use s3_service::{S3Error, S3Service};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use std::time::Duration;
 use storage::Storage;
 use tracing::{error, info};
 use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, fmt};
+use tokio::sync::Mutex;
+
+// Import the ConsistencyChecker
+use crate::background::ConsistencyChecker;
 
 // Initialize tracing
 fn init_logging() {
@@ -29,7 +35,6 @@ fn init_logging() {
     fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .json()
-        // .pretty()
         .with_file(false)
         .with_line_number(false)
         .with_target(false)
@@ -55,8 +60,9 @@ impl ResponseError for S3Error {
             S3Error::BucketAlreadyExists(_) => StatusCode::CONFLICT,
             S3Error::BucketNotFound(_) => StatusCode::NOT_FOUND,
             S3Error::ObjectNotFound(_, _) => StatusCode::NOT_FOUND,
-            S3Error::BucketOperationFailed(_) => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            S3Error::ObjectCreationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            S3Error::BucketOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            S3Error::InternalStorageError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -69,7 +75,7 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting S3-like Storage HTTP API on http://127.0.0.1:8080");
 
-    // Initialize Storage first
+    // Initialize Storage
     let db_path = "s3_storage.db";
     let storage = match Storage::new(db_path) {
         Ok(s) => Arc::new(Mutex::new(s)),
@@ -77,14 +83,24 @@ async fn main() -> std::io::Result<()> {
             error!("Failed to initialize storage: {}", e);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Storage initialization failed: {}", e),
+                format!("Failed to initialize storage: {}", e),
             ));
         }
     };
 
-    // Initialize S3Service by passing it the storage Arc
-    let s3_service = Arc::new(Mutex::new(S3Service::new(storage.clone())));
+    // Create and start the background consistency checker
+    let storage_for_checker = storage.clone();
+    let _checker_handle = ConsistencyChecker::new(
+        storage_for_checker,
+        Duration::from_secs(3600), // Run every hour
+    ).start();
 
+    info!("Started background consistency checker");
+
+    // Create S3Service with the storage
+    let s3_service = Arc::new(Mutex::new(S3Service::new(storage)));
+
+    // Start the HTTP server
     HttpServer::new(move || {
         // Only provide s3_service_data to the app_data.
         // Handlers will interact with S3Service, which internally manages Storage.

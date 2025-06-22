@@ -44,12 +44,17 @@ pub enum StorageError {
     #[error("Bucket '{0}' not found in storage")]
     // <--- NEW: Specific error for bucket not found in storage
     BucketNotFoundInStorage(String),
+    #[error("Data integrity error: {0}")]
+    IntegrityError(String),
+    #[error("Consistency check failed: {0}")]
+    ConsistencyError(String),
 }
 
 impl Storage {
     pub fn new(db_path: &str) -> Result<Self, StorageError> {
         let conn = Connection::open(db_path)?;
         let base_path = Path::new("data").to_path_buf();
+        conn.pragma_update(None, "journal_mode", "WAL")?;
 
         fs::create_dir_all(&base_path)?;
 
@@ -245,6 +250,15 @@ impl Storage {
 
             let data = fs::read(&file_path)?;
 
+            let current_etag = calculate_etag(&data);
+
+            if current_etag != etag {
+                return Err(StorageError::IntegrityError(format!(
+                    "ETag mismatch for {}/{} - possible data corruption",
+                    bucket, key
+                )));
+            }
+
             let user_metadata: Option<HashMap<String, String>> = metadata_json
                 .map(|s| serde_json::from_str(&s))
                 .transpose()?;
@@ -347,5 +361,45 @@ impl Storage {
             .prepare("SELECT COUNT(*) FROM objects WHERE bucket_name = ?1")?;
         let count: i64 = stmt.query_row(params![bucket], |row| row.get(0))?;
         Ok(count == 0)
+    }
+
+    /// Checks the consistency of the storage.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), StorageError>` - An empty result, or an error.
+    pub fn check_consistency(&mut self) -> Result<(), StorageError> {
+        let tx = self.conn.transaction()?;
+
+        // Check all objects have corresponding files
+        let mut stmt = tx.prepare("SELECT bucket_name, key, file_path, etag FROM objects")?;
+
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let bucket: String = row.get(0)?;
+            let key: String = row.get(1)?;
+            let file_path: String = row.get(2)?;
+            let expected_etag: String = row.get(3)?;
+
+            // Verify file exists
+            if !Path::new(&file_path).exists() {
+                return Err(StorageError::ConsistencyError(format!(
+                    "File not found for {}/{} at path {}",
+                    bucket, key, file_path
+                )));
+            }
+
+            // Verify ETag matches
+            let data = fs::read(&file_path)?;
+            let actual_etag = calculate_etag(&data);
+            if actual_etag != expected_etag {
+                return Err(StorageError::ConsistencyError(format!(
+                    "ETag mismatch for {}/{} - possible data corruption",
+                    bucket, key
+                )));
+            }
+        }
+
+        Ok(())
     }
 }

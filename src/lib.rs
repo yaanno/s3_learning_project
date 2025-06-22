@@ -1,3 +1,4 @@
+pub mod background;
 pub mod bucket;
 pub mod handlers;
 pub mod object;
@@ -6,6 +7,7 @@ pub mod storage;
 pub mod structs;
 
 // re-export the types
+pub use background::ConsistencyChecker;
 pub use bucket::Bucket;
 pub use bucket::BucketError;
 pub use object::Object;
