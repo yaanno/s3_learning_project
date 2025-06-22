@@ -1,9 +1,6 @@
 // object.rs
 // This module defines the Object structure, representing a stored item within a bucket.
 
-use hex;
-use md5::Digest;
-use md5::Md5;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTimeError;
@@ -21,7 +18,7 @@ pub struct Object {
     // In a real S3, you might also have metadata like:
     pub content_type: Option<String>,
     #[serde(skip_serializing)]
-    pub etag: String, // Hash of the object's data
+    pub etag: Option<String>, // Hash of the object's data
     pub last_modified: i64,
     #[serde(skip_serializing)]
     pub user_metadata: Option<HashMap<String, String>>,
@@ -33,12 +30,6 @@ pub enum ObjectError {
     #[error("Failed to get system time: {0}")]
     #[serde(skip_serializing)]
     SystemTime(#[from] SystemTimeError),
-}
-
-fn calculate_etag(data: &Vec<u8>) -> String {
-    let mut hasher = Md5::default();
-    hasher.input(data);
-    hex::encode(hasher.result())
 }
 
 impl Object {
@@ -67,7 +58,6 @@ impl Object {
         content_type: Option<String>,
         user_metadata: Option<HashMap<String, String>>,
     ) -> Result<Self, ObjectError> {
-        let etag = calculate_etag(&data);
         let last_modified = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)? // Use '?' to propagate the error
             .as_secs() as i64;
@@ -75,7 +65,7 @@ impl Object {
             key,
             data,
             content_type,
-            etag,
+            etag: None,
             last_modified,
             user_metadata,
         })

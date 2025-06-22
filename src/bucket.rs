@@ -1,7 +1,6 @@
 // bucket.rs
 use crate::object::{Object, ObjectError}; // Ensure Object and ObjectError are accessible
 use crate::storage::{Storage, StorageError}; // Import Storage and StorageError
-use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -43,42 +42,26 @@ impl Bucket {
     ///
     /// # Arguments
     ///
-    /// * `key` - The key of the object to put.
-    /// * `data` - The data of the object to put.
-    /// * `content_type` - The content type of the object to put.
-    /// * `user_metadata` - The user metadata of the object to put.
+    /// * `object` - The object to put into the bucket.
     ///
     /// # Returns
     ///
     /// * `Result<Object, BucketError>` - The object that was put, or an error.
-    pub async fn put_object(
-        &mut self,
-        key: &str,
-        data: &[u8],
-        content_type: Option<&str>,
-        user_metadata: Option<&HashMap<String, String>>,
-    ) -> Result<Object, BucketError> {
+    pub async fn put_object(&mut self, object: Object) -> Result<Object, BucketError> {
         // Return the created Object (from get_object)
         // First, create the Object struct. This part is in-memory.
-        let object_to_store = Object::new(
-            key.to_string(),
-            data.to_vec(),
-            content_type.map(|s| s.to_string()),
-            user_metadata.cloned(),
-        )?; // Converts ObjectError into BucketError::ObjectDataError
-
         let result = {
             let mut storage_lock = self.storage.lock().await;
-            storage_lock.put_object(&self.name, object_to_store)
+            storage_lock.put_object(&self.name, object.clone())
         };
 
         match result {
             Ok(_) => {
-                if let Ok(object) = self.get_object(key).await {
+                if let Ok(object) = self.get_object(&object.key).await {
                     Ok(object)
                 } else {
                     Err(BucketError::Storage(StorageError::ObjectNotFound(
-                        key.to_string(),
+                        object.key.clone(),
                         self.name.clone(),
                     )))
                 }

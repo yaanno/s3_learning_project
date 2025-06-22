@@ -140,12 +140,7 @@ impl S3Service {
         object: Object,
     ) -> Result<Object, S3Error> {
         let mut bucket = self.get_bucket_instance(bucket_name).await?;
-        let result = bucket.put_object(
-            &object.key,
-            &object.data,
-            object.content_type.as_deref(),
-            object.user_metadata.as_ref(),
-        );
+        let result = bucket.put_object(object);
         match result.await {
             Ok(object) => Ok(object),
             Err(e) => Err(S3Error::BucketOperationFailed(e)),

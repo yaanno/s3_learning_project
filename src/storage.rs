@@ -244,7 +244,7 @@ impl Storage {
             let file_path_str: String = row.get(0)?;
             let file_path = PathBuf::from(file_path_str);
             let content_type: Option<String> = row.get(1)?;
-            let etag: String = row.get(2)?;
+            let etag: Option<String> = Some(row.get(2)?);
             let last_modified: i64 = row.get(3)?;
             let metadata_json: Option<String> = row.get(4)?;
 
@@ -252,11 +252,13 @@ impl Storage {
 
             let current_etag = calculate_etag(&data);
 
-            if current_etag != etag {
-                return Err(StorageError::IntegrityError(format!(
-                    "ETag mismatch for {}/{} - possible data corruption",
-                    bucket, key
-                )));
+            if let Some(ref etag) = etag {
+                if current_etag != *etag {
+                    return Err(StorageError::IntegrityError(format!(
+                        "ETag mismatch for {}/{} - possible data corruption",
+                        bucket, key
+                    )));
+                }
             }
 
             let user_metadata: Option<HashMap<String, String>> = metadata_json
