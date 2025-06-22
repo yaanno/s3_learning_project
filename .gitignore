@@ -34,28 +34,14 @@ target/
 # You probably don't want to commit them.
 Cargo.lock
 
-# These are all the files that `cargo build` generates.
-# You probably don't want to commit them.
-target/
-
-# These are all the files that `cargo test` generates.
-# You probably don't want to commit them.
-target/
-
 # These are all the files that `cargo doc` generates.
 # You probably don't want to commit them.
 /doc/
 
-# These are all the files that `cargo run` generates.
-# You probably don't want to commit them.
-target/
-
-# These are all the files that `cargo check` generates.
-# You probably don't want to commit them.
-target/
-
 # SQLite database file
 *.db
+*.db-shm
+*.db-wal
 
 # Data directory
 /data
